@@ -1,0 +1,25 @@
+[package]
+name = "sentinel-detection"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Detection engine and security rules for SentinelX"
+
+[lints]
+workspace = true
+
+[dependencies]
+sentinel-core.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[[test]]
+name = "detection_integration"
+path = "../../tests/detection_integration.rs"

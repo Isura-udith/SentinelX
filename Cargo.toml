@@ -1,0 +1,58 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sentinel-core",
+    "crates/sentinel-detection",
+    "crates/sentinel-app",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["SentinelX Contributors"]
+license = "MIT"
+repository = "https://github.com/sentinelx/sentinelx"
+rust-version = "1.85"
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Time & Identity
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
+
+# Error Handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Logging & Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Property-Based Testing
+proptest = "1.6"
+
+# Workspace Members
+sentinel-core = { path = "crates/sentinel-core" }
+sentinel-detection = { path = "crates/sentinel-detection" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+module_name_repetitions = "allow"
+doc_markdown = "allow"
+field_reassign_with_default = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_precision_loss = "allow"
+cast_lossless = "allow"
+cast_possible_wrap = "allow"
+assert_is_empty = "allow"
