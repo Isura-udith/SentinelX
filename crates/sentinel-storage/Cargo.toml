@@ -1,0 +1,29 @@
+[package]
+name = "sentinel-storage"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "SQLite persistence, transactional repositories, migrations, and audit logging for SentinelX"
+
+[lints]
+workspace = true
+
+[dependencies]
+sentinel-core.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+proptest.workspace = true
+
+[[test]]
+name = "storage_integration"
+path = "../../tests/storage_integration.rs"

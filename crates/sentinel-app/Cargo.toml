@@ -13,6 +13,7 @@ workspace = true
 sentinel-core.workspace = true
 sentinel-detection.workspace = true
 sentinel-collector.workspace = true
+sentinel-storage.workspace = true
 tokio.workspace = true
 chrono.workspace = true
 tracing.workspace = true
@@ -20,3 +21,10 @@ tracing-subscriber.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[[test]]
+name = "detection_pipeline"
+path = "../../tests/detection_pipeline.rs"

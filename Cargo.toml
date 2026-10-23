@@ -5,6 +5,7 @@ members = [
     "crates/sentinel-detection",
     "crates/sentinel-collector",
     "crates/sentinel-app",
+    "crates/sentinel-storage",
 ]
 
 [workspace.package]
@@ -35,13 +36,18 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 # Asynchronous Runtime
 tokio = { version = "1.43", features = ["macros", "rt-multi-thread", "time", "sync", "signal"] }
 
-# Property-Based Testing
+# Database & Persistence
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio", "tls-none", "chrono", "uuid", "migrate", "macros"] }
+
+# Property-Based & Integration Testing
 proptest = "1.6"
+tempfile = "3.17"
 
 # Workspace Members
 sentinel-core = { path = "crates/sentinel-core" }
 sentinel-detection = { path = "crates/sentinel-detection" }
 sentinel-collector = { path = "crates/sentinel-collector" }
+sentinel-storage = { path = "crates/sentinel-storage" }
 
 # Windows API
 windows-sys = { version = "0.61.2", features = [

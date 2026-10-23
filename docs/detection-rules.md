@@ -3,35 +3,53 @@
 ## Rule Index
 
 - [`NET-001: Port-Scan-Like Activity Detection`](#net-001-port-scan-like-activity-detection)
+- [`NET-002: Connection Volume Anomaly Detection (Connection Burst)`](#net-002-connection-volume-anomaly-detection-connection-burst)
 
 ---
 
 ## `NET-001`: Port-Scan-Like Activity Detection
 
 ### 1. Objective & Technical Scope
-Rule `NET-001` detects scenarios where a single source IP address initiates or establishes connections to an unusual number of distinct destination ports within an evaluated observation batch.
+Rule `NET-001` identifies scenarios where a single source IP address initiates or establishes connections to an unusual number of distinct destination ports within a rolling event-time observation window.
 
-Reconnaissance activities — including port sweeps, service enumeration, and automated vulnerability scanning — typically exhibit this high-cardinality destination port signature.
+Reconnaissance activities — including vertical port sweeps, service enumeration, and automated vulnerability scanning — typically exhibit this high-cardinality destination port signature.
 
 ---
 
-### 2. Analytical Algorithm
+### 2. Analytical Algorithm & Rolling-Window Semantics
 
-1. **Telemetry Normalization & Filtering**:
-   - Observations lacking either a `source_ip` or a `destination_port` are safely skipped. Incomplete connection snapshots cannot be attributed to a specific remote scanning entity and must not produce speculative alerts.
-2. **Strict Host Isolation**:
-   - Connection events are partitioned by `source_ip` using an ordered map (`BTreeMap<IpAddr, SourceObservationState>`). Observations across different source IP addresses are **never** merged or combined.
+1. **Event-Time Rolling Window**:
+   - The rule evaluates observations based on **event observation timestamps** (`observed_at`), not database insertion time or wall-clock time.
+   - A high-water mark (`max_observed_at`) tracks the latest event time seen across all processed observations.
+   - The active evaluation window covers `[watermark - window_duration, watermark]`.
+   - Events with observation timestamps older than `watermark - window_duration` are classified as late/expired and do not contribute to the current window.
+   - Events with future timestamps exceeding a clock-skew tolerance (5 minutes ahead of system clock) are rejected to prevent watermark poisoning.
+
+2. **Deduplication & Idempotency**:
+   - Duplicate event deliveries (identical `EventId`) are tracked via a bounded historical set (`BTreeSet<EventId>`) and ignored idempotently.
+   - Repeated observations of the same established connection snapshot do not inflate port or observation counts.
+
 3. **Distinct Destination Port Counting**:
-   - Destination ports are tracked in a set (`BTreeSet<u16>`).
-   - Multiple connection attempts to the same destination port increment the total `observation_count` but do **not** increase the distinct destination port count.
-4. **Threshold Evaluation**:
+   - For each tracked source IP, destination ports observed within the active rolling window are maintained in an ordered set (`BTreeSet<u16>`).
+   - Observations across different source IP addresses are strictly isolated in a partitioned map (`BTreeMap<IpAddr, SourceWindowState>`).
+   - Multiple connection attempts to the same destination port are recorded in `total_observations` but increment `distinct_ports` only once.
+
+4. **Bounded Memory Guarantees**:
+   - Source IP state tracking is capped at `max_tracked_sources` (default: 10,000 hosts). If exceeded, inactive sources with the oldest timestamps are purged first.
+   - Per-source observation queues are capped at `max_observations_per_source` (default: 1,000 observations) to prevent denial-of-service from memory exhaustion.
+
+5. **Threshold & Severity Scaling**:
    - If `distinct_ports.len() >= config.distinct_port_threshold`:
-     - An alert is constructed.
-     - Severity is computed using checked saturating arithmetic:
+     - An alert is generated if not suppressed by the configured cooldown window (`cooldown_seconds`).
+     - Severity is determined through checked saturating arithmetic:
        - `distinct_ports.len() >= threshold * 4` -> **`Critical`**
        - `distinct_ports.len() >= threshold * 2` -> **`High`**
        - Otherwise -> **`Medium`**
-     - The alert records forensic evidence IDs bounded by `config.max_evidence_ids_per_alert`.
+     - Forensic evidence IDs are attached up to `config.max_evidence_ids_per_alert`.
+
+6. **Alert Fingerprint**:
+   - Stable correlation key: `NET-001:{source_ip}`.
+   - Does not include volatile fields (timestamps, random alert IDs).
 
 ---
 
@@ -52,7 +70,60 @@ Analysts receiving a `NET-001` alert should review host ownership, process ID co
 
 ---
 
-### 4. Current Limitations & Architectural Evolution
+## `NET-002`: Connection Volume Anomaly Detection (Connection Burst)
 
-- **Batch Scope vs. Sliding Window**: In Phase 1, `NET-001` evaluates distinct ports within an in-memory batch. Slow-and-low port scans that probe one port every 10 minutes across hours will not be correlated in a single instantaneous batch. Phase 2 will introduce stateful sliding-window trackers backed by persistent SQLite storage.
-- **Port Weighting**: All destination ports currently have equal weighting. Future iterations will support prioritizing well-known administrative ports (e.g., 22, 445, 3389) over high ephemeral port ranges.
+### 1. Objective & Technical Scope
+Rule `NET-002` identifies scenarios where a single source IP address generates an abnormally high volume of connection observations within a configured rolling event-time window.
+
+Rapid connection bursts often indicate automated communication patterns such as network stress testing, brute-force authentication attacks, rapid polling loops, or software misconfigurations.
+
+---
+
+### 2. Analytical Algorithm & Rolling-Window Semantics
+
+1. **Telemetry Observation Semantics (Crucial Operational Notice)**:
+   > **WINDOWS TCP SNAPSHOT LIMITATION**:
+   > Windows IP Helper API (`GetExtendedTcpTable`) provides point-in-time snapshots of the TCP table.
+   > Snapshot polling inherently resamples long-lived established connections on each cycle.
+   > `NET-002` is an **observation-volume heuristic**, counting qualifying connection observations within the time window.
+   > It does NOT indicate connection *failures* or distinct connection *handshakes* unless paired with event-driven ETW lifecycle telemetry.
+
+2. **Event-Time Sliding Window**:
+   - Evaluates observations within `[watermark - window_duration, watermark]`.
+   - Events are deduplicated by `EventId`. If the collector generates unique `EventId` per snapshot record, each snapshot observation contributes to the window volume until expired.
+   - Late-arriving events outside the rolling window are pruned automatically.
+
+3. **Threshold & Severity Scaling**:
+   - Configured via `ConnectionBurstConfig`:
+     - `event_count_threshold`: Qualifying observation count to trigger (default: 50 observations).
+     - `rolling_window_seconds`: Rolling window duration (default: 60 seconds).
+     - `cooldown_seconds`: Minimum interval between consecutive alerts for the same source (default: 300 seconds).
+   - Severity scaling:
+     - `count >= threshold * 4` -> **`Critical`**
+     - `count >= threshold * 2` -> **`High`**
+     - Otherwise -> **`Medium`**
+
+4. **Alert Fingerprint**:
+   - Stable correlation key: `NET-002:{source_ip}`.
+   - Prevents duplicate active alerts while aggregating observation counts.
+
+---
+
+### 3. False Positive Baseline for `NET-002`
+
+Common benign scenarios generating connection volume alerts:
+1. **Database Connection Pools**: Web applications opening multiple simultaneous TCP connections to database clusters during traffic spikes.
+2. **Web Browser Tab Restores**: Browsers opening dozens of concurrent HTTP/2 and HTTPS connections across CDNs and third-party assets upon launch.
+3. **Continuous Polling / Health Checks**: Internal monitoring agents or metrics scrapers (e.g., Prometheus) querying local services at high frequencies.
+4. **High-Frequency Trading or Financial Feeds**: Market data ingestion engines maintaining bursty socket connections.
+
+Analysts should cross-reference `process_id` attribution in the event metadata to identify the executing binary before initiating incident response.
+
+---
+
+### 4. Correlation & Deduplication Policy
+
+Both `NET-001` and `NET-002` participate in SentinelX alert correlation:
+- **Active Fingerprint Uniqueness**: A partial unique index in SQLite enforces that at most one active alert (`status IN ('open', 'acknowledged')`) exists per fingerprint.
+- **Evidence Linking**: When a rule triggers repeatedly for an active alert, `upsert_correlated_alert` updates `last_seen`, increments `event_count`, and links new supporting event IDs in `alert_events`.
+- **Resolved Alert Policy**: Once an alert transitions to `resolved`, its fingerprint is released from active constraints. If new suspicious behavior occurs after resolution, a new distinct alert is created.

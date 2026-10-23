@@ -52,7 +52,8 @@ proptest! {
     ) {
         let mut config = DetectionConfig::default();
         config.distinct_port_threshold = 3;
-        let rule = PortScanRule::new(config).unwrap();
+        let rule_fwd = PortScanRule::new(config.clone()).unwrap();
+        let rule_rev = PortScanRule::new(config).unwrap();
 
         let ip = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 20));
         let port_vec: Vec<u16> = ports.into_iter().collect();
@@ -68,8 +69,8 @@ proptest! {
         let mut events_rev = events_fwd.clone();
         events_rev.reverse();
 
-        let alerts_fwd = rule.evaluate(&events_fwd).unwrap();
-        let alerts_rev = rule.evaluate(&events_rev).unwrap();
+        let alerts_fwd = rule_fwd.evaluate(&events_fwd).unwrap();
+        let alerts_rev = rule_rev.evaluate(&events_rev).unwrap();
 
         prop_assert_eq!(alerts_fwd.len(), alerts_rev.len());
         if !alerts_fwd.is_empty() {
@@ -119,15 +120,16 @@ proptest! {
     fn prop_evaluation_idempotency(port_count in 1usize..=12) {
         let mut config = DetectionConfig::default();
         config.distinct_port_threshold = 5;
-        let rule = PortScanRule::new(config).unwrap();
+        let rule1 = PortScanRule::new(config.clone()).unwrap();
+        let rule2 = PortScanRule::new(config).unwrap();
 
         let ip = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 77));
         let events: Vec<NetworkEvent> = (1..=port_count)
             .map(|p| make_event(ip, p as u16, p as i64))
             .collect();
 
-        let run1 = rule.evaluate(&events).unwrap();
-        let run2 = rule.evaluate(&events).unwrap();
+        let run1 = rule1.evaluate(&events).unwrap();
+        let run2 = rule2.evaluate(&events).unwrap();
 
         prop_assert_eq!(run1.len(), run2.len());
         if !run1.is_empty() {
