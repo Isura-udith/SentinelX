@@ -10,6 +10,8 @@
 //! - [`PortScanRule`]: Rule `NET-001` detecting port sweep reconnaissance while accounting
 //!   for legitimate administrative scanner behaviors.
 
+#![forbid(unsafe_code)]
+
 pub mod engine;
 pub mod rules;
 

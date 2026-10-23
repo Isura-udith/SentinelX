@@ -3,11 +3,12 @@ resolver = "2"
 members = [
     "crates/sentinel-core",
     "crates/sentinel-detection",
+    "crates/sentinel-collector",
     "crates/sentinel-app",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 authors = ["SentinelX Contributors"]
 license = "MIT"
@@ -31,15 +32,26 @@ anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
+# Asynchronous Runtime
+tokio = { version = "1.43", features = ["macros", "rt-multi-thread", "time", "sync", "signal"] }
+
 # Property-Based Testing
 proptest = "1.6"
 
 # Workspace Members
 sentinel-core = { path = "crates/sentinel-core" }
 sentinel-detection = { path = "crates/sentinel-detection" }
+sentinel-collector = { path = "crates/sentinel-collector" }
+
+# Windows API
+windows-sys = { version = "0.61.2", features = [
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
+    "Win32_Foundation",
+] }
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 missing_docs = "warn"
 
 [workspace.lints.clippy]
@@ -55,4 +67,5 @@ cast_sign_loss = "allow"
 cast_precision_loss = "allow"
 cast_lossless = "allow"
 cast_possible_wrap = "allow"
+cast_ptr_alignment = "allow"
 assert_is_empty = "allow"

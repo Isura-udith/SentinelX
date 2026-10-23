@@ -5,11 +5,11 @@
 SentinelX implements a layered verification strategy to guarantee defensive stability, zero-panic execution, and mathematical invariants across all operational conditions.
 
 ```
-       [ Integration Tests ]       End-to-end pipeline: events -> validation -> engine -> alerts
+       [ Integration Tests ]       End-to-end pipeline: collector -> normalize -> engine -> alerts
                ▲
        [ Property Tests ]          Invariants tested with proptest across arbitrary inputs
                ▲
-       [ Unit Tests ]              Boundary conditions, serialization, and error variants
+       [ Unit Tests ]              Boundary conditions, byte-order conversions, and error variants
 ```
 
 ---
@@ -33,6 +33,24 @@ SentinelX implements a layered verification strategy to guarantee defensive stab
   - Verification that default parameters are valid.
   - Rejection of zero port threshold, zero window duration, negative window duration, zero batch size, and zero evidence limits.
   - Checked threshold arithmetic overflow detection.
+
+#### `sentinel-collector`
+- **`normalize::tests`**:
+  - `test_ipv4_and_port_byte_order_decoding`: Validates network byte order (big-endian) integer decoding for IPv4 addresses and TCP ports.
+  - `test_ipv6_normalization`: Verifies correct byte copying and string representation for IPv6 addresses.
+  - `test_listening_socket_skipped`: Verifies that sockets in `TcpState::Listen` or sockets with `remote_port == 0` are skipped with `SkipReason::ListeningSocket`.
+  - `test_invalid_local_port_zero`: Asserts that `local_port == 0` is rejected with `SkipReason::InvalidLocalPort`.
+  - `test_normalize_established_record`: Asserts complete mapping of valid records into `NetworkEvent` with process ID and TCP state metadata.
+- **`mock::tests`**:
+  - `test_mock_port_sweep_scenario`: Verifies that `MockScenario::PortSweep` generates a deterministic multi-port sweep sequence.
+  - `test_mock_mixed_scenario_skips_listening`: Validates that `MockScenario::Mixed` produces both normal events and skipped listening sockets.
+  - `test_mock_sequence_progression`: Validates multi-batch sequence rotation.
+  - `test_mock_injected_failure`: Validates that simulated collection errors cleanly return `CollectorError::MockFailure` without panic.
+- **`stats::tests`**:
+  - `test_stats_recording`: Validates tracking of attempted cycles, successful cycles, failure counts, raw counts, normalized counts, skipped counts, alert counts, and duration metrics.
+- **`windows_tcp::tests`**:
+  - `test_windows_tcp_collector_creation`: Verifies constructor and default naming.
+  - `test_native_windows_collection_live`: **(Windows 11 Live Test)** Queries `GetExtendedTcpTable` directly against the local host TCP stack and asserts that records are successfully enumerated without administrator privileges.
 
 #### `sentinel-detection`
 - **`rules::port_scan::tests`**:
@@ -61,6 +79,10 @@ Property-based tests evaluate fundamental invariants across thousands of randomi
 | **`sentinel-core/tests/property_tests.rs`** | `prop_process_id_validation` | Operating system PIDs beyond `MAX_PROCESS_ID` (4,194,304) are rejected. |
 | **`sentinel-core/tests/property_tests.rs`** | `prop_alert_inverted_time_rejected` | Any alert with `first > last` is rejected. |
 | **`sentinel-core/tests/property_tests.rs`** | `prop_config_arithmetic_overflow` | Any threshold that would overflow `u16` when scaled fails configuration validation. |
+| **`sentinel-collector/tests/property_tests.rs`** | `prop_ipv4_decoding_roundtrip` | Every `u32` decoded as network-order IPv4 preserves its byte representation. |
+| **`sentinel-collector/tests/property_tests.rs`** | `prop_port_decoding_roundtrip` | Every 16-bit port decoded in network byte order roundtrips losslessly. |
+| **`sentinel-collector/tests/property_tests.rs`** | `prop_listening_socket_always_skipped` | Sockets with `state == Listen` or `remote_port == 0` are **always** rejected with `ListeningSocket`. |
+| **`sentinel-collector/tests/property_tests.rs`** | `prop_valid_records_always_normalize` | Any record with valid non-zero ports and non-listening state always yields a valid `NetworkEvent`. |
 | **`sentinel-detection/tests/property_tests.rs`** | `prop_duplicate_ports_never_inflate_distinct_count` | Arbitrary repeated connections to an already observed port never trigger an alert if distinct ports < threshold. |
 | **`sentinel-detection/tests/property_tests.rs`** | `prop_input_permutation_invariance` | Shuffling/permuting the input event sequence produces logically identical alerts. |
 | **`sentinel-detection/tests/property_tests.rs`** | `prop_independent_source_ips_never_merged` | Independent source IPs never contaminate each other's distinct port counts. |
@@ -69,44 +91,51 @@ Property-based tests evaluate fundamental invariants across thousands of randomi
 
 ---
 
-### 2.3 Integration Tests (`tests/detection_integration.rs`)
+### 2.3 Integration Tests
 
-The integration test exercises the full analytical workflow:
-1. Instantiates a `DetectionEngine` with `PortScanRule` (`NET-001`).
-2. Ingests a multi-category synthetic dataset:
-   - A port sweep scanner targeting 8 distinct ports (`192.0.2.10`).
-   - A normal web browsing client targeting 2 ports (`192.0.2.50`).
-   - A repetitive polling client targeting 1 port 12 times (`198.51.100.25`).
-   - Incomplete telemetry events missing source IP or destination port (`198.51.100.99`).
-3. Executes batch detection.
-4. Asserts that exactly one alert is generated (for the scanner IP) with expected attributes (`Medium` severity, 8 evidence IDs).
-5. Validates full JSON serialization and deserialization roundtrip.
+#### 1. Detection Engine Integration (`tests/detection_integration.rs`)
+Tests multi-category synthetic data through the analytical rule engine.
+
+#### 2. Mock Collector Pipeline Integration (`tests/mock_integration.rs`)
+Tests the full Phase 2 pipeline:
+1. Instantiates `MockCollector` configured with `MockScenario::PortSweep`.
+2. Collects a batch of raw records.
+3. Normalizes records into `NetworkEvent` objects, asserting skipped counts.
+4. Feeds normalized events into `DetectionEngine` with `PortScanRule` (`NET-001`).
+5. Asserts that an alert is generated matching expected severity and evidence bounds.
+6. Asserts that `MockScenario::Empty` cleanly produces 0 alerts without errors.
 
 ---
 
 ## 3. Reproduction Commands
 
-### Run Full Test Suite
+### Run Full Test Suite (All Crates & Integration Tests)
 ```powershell
 cargo test --workspace
 ```
 
-### Run Integration Test Only
+### Run Mock Integration Tests Only
+```powershell
+cargo test --test mock_integration
+```
+
+### Run Detection Integration Tests Only
 ```powershell
 cargo test --test detection_integration
 ```
 
-### Run Property Tests Only
+### Run Collector Property Tests
 ```powershell
-cargo test --test property_tests
+cargo test -p sentinel-collector --test property_tests
 ```
 
-### Run Clippy Strict Verification
+### Run Live Windows TCP Tests
 ```powershell
-cargo clippy --workspace --all-targets -- -D warnings
+cargo test -p sentinel-collector -- windows_tcp::tests::test_native_windows_collection_live --nocapture
 ```
 
-### Run Format Check
+### Code Formatting and Clippy Lints
 ```powershell
 cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
 ```

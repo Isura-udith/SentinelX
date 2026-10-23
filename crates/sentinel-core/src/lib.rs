@@ -16,6 +16,8 @@
 //! - [`config`]: Detection configurations and threshold validation.
 //! - [`error`]: Domain error types and invariant failure definitions.
 
+#![forbid(unsafe_code)]
+
 pub mod alert;
 pub mod config;
 pub mod error;

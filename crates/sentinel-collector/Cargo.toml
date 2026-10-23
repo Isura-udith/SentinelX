@@ -1,0 +1,29 @@
+[package]
+name = "sentinel-collector"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Windows telemetry collection and normalization subsystem for SentinelX"
+
+[lints]
+workspace = true
+
+[dependencies]
+sentinel-core.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys.workspace = true
+
+[dev-dependencies]
+sentinel-detection.workspace = true
+proptest.workspace = true
+
+[[test]]
+name = "mock_integration"
+path = "../../tests/mock_integration.rs"
