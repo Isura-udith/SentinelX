@@ -19,6 +19,7 @@ pub mod database;
 pub mod error;
 pub mod events;
 pub mod retention;
+pub mod rules;
 
 pub use alerts::{
     AlertCorrelationCandidate, AlertQueryFilter, AlertRepository, CorrelationOutcome,
@@ -29,3 +30,4 @@ pub use database::{Database, DatabaseConfig};
 pub use error::StorageError;
 pub use events::{BatchInsertResult, EventQueryFilter, EventRepository, PersistedEvent};
 pub use retention::{RetentionManager, RetentionPolicy, RetentionReport};
+pub use rules::{PersistedRule, RuleRepository};

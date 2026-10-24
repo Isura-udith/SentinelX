@@ -276,6 +276,53 @@ impl AuditLogRepository {
         Ok(count.max(0) as usize)
     }
 
+    /// Counts audit log records matching the bounded filter criteria.
+    pub async fn count_matching_entries(
+        &self,
+        filter: &AuditQueryFilter,
+    ) -> Result<usize, StorageError> {
+        let mut sql = String::from("SELECT COUNT(*) FROM audit_log WHERE 1=1");
+        let mut binds: Vec<String> = Vec::new();
+
+        if let Some(actor) = &filter.actor {
+            sql.push_str(" AND actor = ?");
+            binds.push(actor.clone());
+        }
+
+        if let Some(action) = &filter.action {
+            sql.push_str(" AND action = ?");
+            binds.push(action.clone());
+        }
+
+        if let Some(target_type) = &filter.target_type {
+            sql.push_str(" AND target_type = ?");
+            binds.push(target_type.clone());
+        }
+
+        if let Some(target_id) = &filter.target_id {
+            sql.push_str(" AND target_id = ?");
+            binds.push(target_id.clone());
+        }
+
+        if let Some(start) = filter.start_time {
+            sql.push_str(" AND timestamp >= ?");
+            binds.push(start.to_rfc3339());
+        }
+
+        if let Some(end) = filter.end_time {
+            sql.push_str(" AND timestamp <= ?");
+            binds.push(end.to_rfc3339());
+        }
+
+        let mut query = sqlx::query_scalar::<_, i64>(&sql);
+        for bind in binds {
+            query = query.bind(bind);
+        }
+
+        let count = query.fetch_one(&self.pool).await?;
+        Ok(count.max(0) as usize)
+    }
+
     /// Deletes expired audit log records older than `cutoff` in a single bounded batch.
     pub async fn delete_expired_entries(
         &self,

@@ -122,20 +122,24 @@ SentinelX is organized as a Cargo virtual workspace containing five decoupled cr
 cargo build --workspace
 ```
 
-### 2. Run with Native Windows 11 Telemetry & SQLite Storage
+### 2. Launch Native Windows 11 Desktop Dashboard (Tauri 2)
 
-Executes 3 collection cycles (1 snapshot per second) against your local host TCP table, saving events and alerts to `sentinelx.db`:
+Launches the SentinelX desktop window connecting React/TypeScript to the live backend:
 
 ```powershell
 cargo run -p sentinel-app
 ```
 
-### 3. Run with Deterministic Mock Telemetry
+### 3. Run Headless CLI Monitoring Mode
 
-Useful for testing, demonstrations, or non-Windows platforms without querying the live operating system:
+Useful for server deployments, background services, or automated scripting without GUI overhead:
 
 ```powershell
-cargo run -p sentinel-app -- --mock
+# Run 3 live Windows TCP collection cycles to SQLite:
+cargo run -p sentinel-app -- --cli --max-cycles 3
+
+# Run with deterministic mock telemetry scenario:
+cargo run -p sentinel-app -- --cli --mock --max-cycles 5
 ```
 
 ### 4. Customizing Database Path, Intervals, and Retention
@@ -339,9 +343,15 @@ Generated Security Alerts (1):
   - Stateful event-time rolling-window analysis (`NET-001`, `NET-002`).
   - Alert fingerprinting, correlation, and evidence linking (`alert_events`).
   - Configurable retention with active forensic evidence preservation (Strategy A).
-- **Phase 4 (Tauri Desktop UI & Visualization)**:
-  - Tauri 2 desktop application with React / TypeScript dashboard.
-  - Real-time connection graphs and alert triage workflows.
+- **Phase 4 (Tauri Desktop Dashboard & Security Operations)**: *Completed*
+  - Native Windows 11 desktop application via Tauri 2, React 19, TypeScript (strict mode), and Tailwind CSS.
+  - Professional cybersecurity SOC dark theme with high contrast typography and accessible status indicators.
+  - 7 global navigation pages: Overview, Network Events, Security Alerts, Detection Rules, Telemetry, Audit History, Settings.
+  - 17 typed Rust backend commands with strict boundary validation and safe error mapping.
+  - Server-side SQLite pagination and multi-parameter filtering for events and alerts.
+  - Interactive alert triage with evidence inspection, status transitions (`Acknowledge`, `Resolve`), and audit trail.
+  - Real-time IPC event notifications (`sentinel://*`) without busy polling.
+  - Preservation of headless CLI monitoring mode (`--cli`).
 - **Phase 5 (Advanced Telemetry & Correlation)**:
   - Windows ETW (Event Tracing for Windows) integration for real-time connection event streams.
   - UDP endpoint tracking via `GetExtendedUdpTable`.

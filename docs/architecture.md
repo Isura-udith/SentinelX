@@ -78,12 +78,16 @@ crates/
   - `error`: Strongly typed [`StorageError`](../crates/sentinel-storage/src/error.rs).
 
 #### `sentinel-app`
-- **Role**: Application orchestration, pipeline coordination, and command-line execution.
-- **Dependencies**: Orchestrates `sentinel-core`, `sentinel-collector`, `sentinel-detection`, `sentinel-storage`, Tokio runtime, `tracing-subscriber`, and `anyhow`.
+- **Role**: Native Tauri 2 Windows desktop application, managed state coordination, typed commands, and optional headless CLI monitoring execution.
+- **Dependencies**: Orchestrates `sentinel-core`, `sentinel-collector`, `sentinel-detection`, `sentinel-storage`, `tauri` (v2), Tokio runtime, `tracing-subscriber`, and `anyhow`.
 - **Components**:
+  - `state`: [`AppState`](../crates/sentinel-app/src/state.rs) managing concurrent access to repositories, coordinator, telemetry controls, background collection worker, and `settings.json` file persistence.
+  - `commands`: 17 strongly-typed Tauri commands (`get_system_status`, `query_network_events`, `acknowledge_alert`, `update_detection_rule`, etc.) with strict defensive boundary validation.
+  - `events`: Strongly-typed IPC events (`sentinel://*`) for pushing live threat alerts and collector lifecycle states to the React frontend.
+  - `errors`: [`AppError`](../crates/sentinel-app/src/errors.rs) mapping internal storage, detection, and domain errors into sanitized UI error responses.
   - `pipeline`: [`PipelineCoordinator`](../crates/sentinel-app/src/pipeline.rs) managing the end-to-end ingestion and detection lifecycle with structured metrics (`PipelineMetrics`).
   - `telemetry`: [`TelemetryScheduler`](../crates/sentinel-app/src/telemetry.rs) running asynchronous polling loops, isolating blocking FFI collection via `tokio::task::spawn_blocking`, and handling graceful shutdown on `Ctrl+C`.
-  - `main`: CLI entry point supporting `--mock`, `--interval-ms`, `--max-cycles`, `--continuous`, `--db`, `--retention-days`, and `--no-retention`.
+  - `main`: Desktop entry point launching the Tauri 2 application window, while supporting `--cli` headless monitoring mode.
 
 ---
 

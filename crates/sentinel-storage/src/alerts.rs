@@ -169,6 +169,8 @@ pub struct AlertQueryFilter {
     pub start_time: Option<DateTime<Utc>>,
     /// Optional filter by latest creation time.
     pub end_time: Option<DateTime<Utc>>,
+    /// Optional free-text search (matches title, description, or rule ID).
+    pub search_text: Option<String>,
     /// Page size limit (clamped to `MAX_ALERT_QUERY_LIMIT`).
     pub limit: usize,
     /// Offset for pagination.
@@ -217,6 +219,21 @@ impl AlertQueryFilter {
     #[must_use]
     pub fn with_severity(mut self, severity: AlertSeverity) -> Self {
         self.severity = Some(severity);
+        self
+    }
+
+    /// Filters by free-text search.
+    #[must_use]
+    pub fn with_search_text(mut self, text: impl Into<String>) -> Self {
+        self.search_text = Some(text.into());
+        self
+    }
+
+    /// Filters by creation time range.
+    #[must_use]
+    pub fn with_time_range(mut self, start: DateTime<Utc>, end: DateTime<Utc>) -> Self {
+        self.start_time = Some(start);
+        self.end_time = Some(end);
         self
     }
 }
@@ -618,6 +635,14 @@ impl AlertRepository {
             binds.push(end.to_rfc3339());
         }
 
+        if let Some(ref text) = filter.search_text {
+            sql.push_str(" AND (title LIKE ? OR description LIKE ? OR rule_id LIKE ?)");
+            let pattern = format!("%{text}%");
+            binds.push(pattern.clone());
+            binds.push(pattern.clone());
+            binds.push(pattern);
+        }
+
         sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
 
         let mut query = sqlx::query(&sql);
@@ -850,6 +875,102 @@ impl AlertRepository {
             .fetch_one(&self.pool)
             .await?;
         Ok(count.max(0) as usize)
+    }
+
+    /// Counts alerts matching the bounded query filter.
+    pub async fn count_matching_alerts(
+        &self,
+        filter: &AlertQueryFilter,
+    ) -> Result<usize, StorageError> {
+        let mut sql = String::from("SELECT COUNT(*) FROM alerts WHERE 1=1");
+        let mut binds: Vec<String> = Vec::new();
+
+        if let Some(status) = filter.status {
+            sql.push_str(" AND status = ?");
+            binds.push(status_to_str(status).to_string());
+        }
+
+        if let Some(rule_id) = &filter.rule_id {
+            sql.push_str(" AND rule_id = ?");
+            binds.push(rule_id.clone());
+        }
+
+        if let Some(sev) = filter.severity {
+            sql.push_str(" AND severity = ?");
+            binds.push(severity_to_str(sev).to_string());
+        }
+
+        if let Some(start) = filter.start_time {
+            sql.push_str(" AND created_at >= ?");
+            binds.push(start.to_rfc3339());
+        }
+
+        if let Some(end) = filter.end_time {
+            sql.push_str(" AND created_at <= ?");
+            binds.push(end.to_rfc3339());
+        }
+
+        if let Some(ref text) = filter.search_text {
+            sql.push_str(" AND (title LIKE ? OR description LIKE ? OR rule_id LIKE ?)");
+            let pattern = format!("%{text}%");
+            binds.push(pattern.clone());
+            binds.push(pattern.clone());
+            binds.push(pattern);
+        }
+
+        let mut query = sqlx::query_scalar::<_, i64>(&sql);
+        for bind in binds {
+            query = query.bind(bind);
+        }
+
+        let count = query.fetch_one(&self.pool).await?;
+        Ok(count.max(0) as usize)
+    }
+
+    /// Returns the count of currently open alerts.
+    pub async fn count_open_alerts(&self) -> Result<usize, StorageError> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM alerts WHERE status = 'open'")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(count.max(0) as usize)
+    }
+
+    /// Returns the count of open or acknowledged alerts with High or Critical severity.
+    pub async fn count_high_critical_alerts(&self) -> Result<usize, StorageError> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM alerts WHERE status IN ('open', 'acknowledged') AND severity IN ('high', 'critical')",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(count.max(0) as usize)
+    }
+
+    /// Returns counts of active (open or acknowledged) alerts grouped by severity.
+    pub async fn count_by_severity(
+        &self,
+    ) -> Result<std::collections::BTreeMap<AlertSeverity, usize>, StorageError> {
+        let mut map = std::collections::BTreeMap::new();
+        map.insert(AlertSeverity::Informational, 0);
+        map.insert(AlertSeverity::Low, 0);
+        map.insert(AlertSeverity::Medium, 0);
+        map.insert(AlertSeverity::High, 0);
+        map.insert(AlertSeverity::Critical, 0);
+
+        let rows = sqlx::query(
+            "SELECT severity, COUNT(*) as cnt FROM alerts WHERE status IN ('open', 'acknowledged') GROUP BY severity",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        for row in rows {
+            let sev_str: String = row.try_get("severity")?;
+            if let Ok(sev) = str_to_severity(&sev_str) {
+                let cnt: i64 = row.try_get("cnt")?;
+                map.insert(sev, cnt.max(0) as usize);
+            }
+        }
+
+        Ok(map)
     }
 }
 

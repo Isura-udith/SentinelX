@@ -22,6 +22,14 @@ pub const MAX_EVENT_QUERY_LIMIT: usize = 1000;
 pub struct EventQueryFilter {
     /// Optional filter for source IP address.
     pub source_ip: Option<IpAddr>,
+    /// Optional filter for destination IP address.
+    pub destination_ip: Option<IpAddr>,
+    /// Optional filter for protocol.
+    pub protocol: Option<NetworkProtocol>,
+    /// Optional filter for telemetry source.
+    pub source: Option<TelemetrySource>,
+    /// Optional search text matching address, protocol, or source.
+    pub search_text: Option<String>,
     /// Optional filter for destination port.
     pub destination_port: Option<u16>,
     /// Optional start boundary for event observation time (inclusive).
@@ -32,6 +40,8 @@ pub struct EventQueryFilter {
     pub limit: usize,
     /// Offset for pagination.
     pub offset: usize,
+    /// Whether to sort in descending chronological order (newest first).
+    pub sort_desc: bool,
 }
 
 impl EventQueryFilter {
@@ -65,6 +75,34 @@ impl EventQueryFilter {
         self
     }
 
+    /// Filters by destination IP address.
+    #[must_use]
+    pub fn with_destination_ip(mut self, ip: IpAddr) -> Self {
+        self.destination_ip = Some(ip);
+        self
+    }
+
+    /// Filters by protocol.
+    #[must_use]
+    pub fn with_protocol(mut self, protocol: NetworkProtocol) -> Self {
+        self.protocol = Some(protocol);
+        self
+    }
+
+    /// Filters by telemetry source.
+    #[must_use]
+    pub fn with_source(mut self, source: TelemetrySource) -> Self {
+        self.source = Some(source);
+        self
+    }
+
+    /// Filters with free-text search.
+    #[must_use]
+    pub fn with_search_text(mut self, text: impl Into<String>) -> Self {
+        self.search_text = Some(text.into());
+        self
+    }
+
     /// Filters by destination port.
     #[must_use]
     pub fn with_destination_port(mut self, port: u16) -> Self {
@@ -77,6 +115,13 @@ impl EventQueryFilter {
     pub fn with_time_range(mut self, start: DateTime<Utc>, end: DateTime<Utc>) -> Self {
         self.start_time = Some(start);
         self.end_time = Some(end);
+        self
+    }
+
+    /// Sets chronological sort direction.
+    #[must_use]
+    pub fn with_sort_desc(mut self, sort_desc: bool) -> Self {
+        self.sort_desc = sort_desc;
         self
     }
 }
@@ -305,6 +350,29 @@ impl EventRepository {
             params.push(SqlParam::Text(src_ip.to_string()));
         }
 
+        if let Some(dst_ip) = filter.destination_ip {
+            sql.push_str(" AND destination_ip = ?");
+            params.push(SqlParam::Text(dst_ip.to_string()));
+        }
+
+        if let Some(proto) = filter.protocol {
+            sql.push_str(" AND protocol = ?");
+            params.push(SqlParam::Text(proto.to_string()));
+        }
+
+        if let Some(src) = filter.source {
+            sql.push_str(" AND source = ?");
+            params.push(SqlParam::Text(src.to_string()));
+        }
+
+        if let Some(ref text) = filter.search_text {
+            sql.push_str(" AND (source_ip LIKE ? OR destination_ip LIKE ? OR id LIKE ?)");
+            let pattern = format!("%{text}%");
+            params.push(SqlParam::Text(pattern.clone()));
+            params.push(SqlParam::Text(pattern.clone()));
+            params.push(SqlParam::Text(pattern));
+        }
+
         if let Some(dst_port) = filter.destination_port {
             sql.push_str(" AND destination_port = ?");
             params.push(SqlParam::Int(i64::from(dst_port)));
@@ -320,7 +388,11 @@ impl EventRepository {
             params.push(SqlParam::Text(end.to_rfc3339()));
         }
 
-        sql.push_str(" ORDER BY observed_at ASC LIMIT ? OFFSET ?");
+        if filter.sort_desc {
+            sql.push_str(" ORDER BY observed_at DESC LIMIT ? OFFSET ?");
+        } else {
+            sql.push_str(" ORDER BY observed_at ASC LIMIT ? OFFSET ?");
+        }
 
         let mut query = sqlx::query(&sql);
         for param in params {
@@ -347,6 +419,92 @@ impl EventRepository {
         }
 
         Ok(results)
+    }
+
+    /// Counts events matching the bounded filter criteria.
+    ///
+    /// # Errors
+    /// Returns [`StorageError`] on query failure.
+    #[instrument(skip(self))]
+    pub async fn count_matching_events(
+        &self,
+        filter: &EventQueryFilter,
+    ) -> Result<usize, StorageError> {
+        let mut sql = String::from("SELECT COUNT(*) FROM events WHERE 1=1");
+
+        #[derive(Debug)]
+        enum SqlParam {
+            Text(String),
+            Int(i64),
+        }
+
+        let mut params: Vec<SqlParam> = Vec::new();
+
+        if let Some(src_ip) = filter.source_ip {
+            sql.push_str(" AND source_ip = ?");
+            params.push(SqlParam::Text(src_ip.to_string()));
+        }
+
+        if let Some(dst_ip) = filter.destination_ip {
+            sql.push_str(" AND destination_ip = ?");
+            params.push(SqlParam::Text(dst_ip.to_string()));
+        }
+
+        if let Some(proto) = filter.protocol {
+            sql.push_str(" AND protocol = ?");
+            params.push(SqlParam::Text(proto.to_string()));
+        }
+
+        if let Some(src) = filter.source {
+            sql.push_str(" AND source = ?");
+            params.push(SqlParam::Text(src.to_string()));
+        }
+
+        if let Some(ref text) = filter.search_text {
+            sql.push_str(" AND (source_ip LIKE ? OR destination_ip LIKE ? OR id LIKE ?)");
+            let pattern = format!("%{text}%");
+            params.push(SqlParam::Text(pattern.clone()));
+            params.push(SqlParam::Text(pattern.clone()));
+            params.push(SqlParam::Text(pattern));
+        }
+
+        if let Some(dst_port) = filter.destination_port {
+            sql.push_str(" AND destination_port = ?");
+            params.push(SqlParam::Int(i64::from(dst_port)));
+        }
+
+        if let Some(start) = filter.start_time {
+            sql.push_str(" AND observed_at >= ?");
+            params.push(SqlParam::Text(start.to_rfc3339()));
+        }
+
+        if let Some(end) = filter.end_time {
+            sql.push_str(" AND observed_at <= ?");
+            params.push(SqlParam::Text(end.to_rfc3339()));
+        }
+
+        let mut query = sqlx::query_scalar::<_, i64>(&sql);
+        for param in params {
+            query = match param {
+                SqlParam::Text(s) => query.bind(s),
+                SqlParam::Int(i) => query.bind(i),
+            };
+        }
+
+        let count = query.fetch_one(&self.pool).await?;
+        Ok(count.max(0) as usize)
+    }
+
+    /// Returns the count of events observed at or after the given `since` timestamp.
+    ///
+    /// # Errors
+    /// Returns [`StorageError::Database`] on SQL query failure.
+    pub async fn count_events_since(&self, since: DateTime<Utc>) -> Result<usize, StorageError> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events WHERE observed_at >= ?")
+            .bind(since.to_rfc3339())
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(count.max(0) as usize)
     }
 
     /// Returns the total count of network events currently stored in the database.

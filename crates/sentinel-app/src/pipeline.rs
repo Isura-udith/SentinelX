@@ -180,6 +180,16 @@ impl PipelineCoordinator {
         &self.event_repo
     }
 
+    /// Replaces the active telemetry collector instance.
+    pub fn set_collector(&mut self, collector: Box<dyn TelemetryCollector>) {
+        self.collector = collector;
+    }
+
+    /// Replaces the active detection engine with updated rules/configuration.
+    pub fn update_engine(&mut self, engine: DetectionEngine) {
+        self.engine = engine;
+    }
+
     /// Executes a single complete end-to-end processing cycle.
     #[allow(clippy::too_many_lines)]
     #[instrument(skip(self))]

@@ -74,3 +74,28 @@ SentinelX explicitly **does not**:
 - Route or redirect network packets.
 - Perform active port scanning or network probing against external hosts.
 - Act as an intrusion prevention system (IPS).
+
+---
+
+## 6. Desktop Application & Tauri 2 Security
+
+### 6.1 Capability Isolation & Least Privilege
+SentinelX Desktop enforces Tauri 2 least-privilege capability separation:
+- The capability set is locked down to `core:default`.
+- Arbitrary shell execution (`tauri-plugin-shell`) is strictly disallowed.
+- Arbitrary filesystem access (`tauri-plugin-fs`) is disabled; all file persistence is managed through typed backend commands saving strictly to `%LOCALAPPDATA%\SentinelX`.
+- No remote script loading: all assets are compiled and bundled locally.
+
+### 6.2 Strict Content Security Policy (CSP)
+The webview enforces a restrictive CSP header:
+```
+default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'
+```
+- Remote navigation is blocked.
+- External URLs cannot be navigated to inside the desktop window context.
+
+### 6.3 Local IPC Boundary & Input Sanitization
+- All frontend command parameters (IP addresses, port numbers, time ranges, limits) are validated independently on both the frontend and inside Rust command handlers before querying the database.
+- Database connection strings, passwords, or host-sensitive environment variables are never transmitted to the frontend webview.
+- Errors returned to the UI are mapped to structured, sanitized user-friendly error codes (`AppError`) preventing leakage of internal stack traces.
+

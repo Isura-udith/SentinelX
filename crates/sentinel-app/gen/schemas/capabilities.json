@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capabilities for SentinelX Desktop application","local":true,"windows":["*"],"permissions":["core:default"]}}
