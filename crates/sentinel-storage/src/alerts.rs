@@ -424,6 +424,17 @@ impl AlertRepository {
         candidate: &AlertCorrelationCandidate,
         actor: &str,
     ) -> Result<CorrelationOutcome, StorageError> {
+        self.upsert_correlated_alert_bounded(candidate, actor, 3)
+            .await
+    }
+
+    #[allow(clippy::too_many_lines)]
+    async fn upsert_correlated_alert_bounded(
+        &self,
+        candidate: &AlertCorrelationCandidate,
+        actor: &str,
+        retries_remaining: usize,
+    ) -> Result<CorrelationOutcome, StorageError> {
         let mut tx = self.pool.begin().await.map_err(StorageError::Database)?;
 
         let active_row = sqlx::query(
@@ -543,12 +554,16 @@ impl AlertRepository {
             .await;
 
             if let Err(e) = insert_res {
-                if let sqlx::Error::Database(ref db_err) = e
-                    && db_err.is_unique_violation()
-                {
+                if retries_remaining > 0 {
                     let _ = tx.rollback().await;
-                    debug!(fingerprint = %candidate.fingerprint, "Concurrent active alert detected; retrying correlation");
-                    return Box::pin(self.upsert_correlated_alert(candidate, actor)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(15)).await;
+                    debug!(fingerprint = %candidate.fingerprint, retries_remaining, "Retrying alert correlation after transient conflict");
+                    return Box::pin(self.upsert_correlated_alert_bounded(
+                        candidate,
+                        actor,
+                        retries_remaining - 1,
+                    ))
+                    .await;
                 }
                 return Err(StorageError::Database(e));
             }
@@ -680,6 +695,14 @@ impl AlertRepository {
         actor: &str,
         note: Option<&str>,
     ) -> Result<(), StorageError> {
+        if let Some(n) = note
+            && n.len() > 1024
+        {
+            return Err(StorageError::InvalidParameter(
+                "Triage note must be <= 1024 characters".to_string(),
+            ));
+        }
+
         let mut tx = self.pool.begin().await.map_err(StorageError::Database)?;
         let id_str = id.to_string();
 
@@ -738,6 +761,14 @@ impl AlertRepository {
         actor: &str,
         note: Option<&str>,
     ) -> Result<(), StorageError> {
+        if let Some(n) = note
+            && n.len() > 1024
+        {
+            return Err(StorageError::InvalidParameter(
+                "Triage note must be <= 1024 characters".to_string(),
+            ));
+        }
+
         let mut tx = self.pool.begin().await.map_err(StorageError::Database)?;
         let id_str = id.to_string();
 

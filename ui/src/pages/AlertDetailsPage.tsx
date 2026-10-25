@@ -61,8 +61,29 @@ export const AlertDetailsPage: React.FC<AlertDetailsPageProps> = ({
   }, [alertId]);
 
   useEffect(() => {
-    fetchAlertDetails();
-  }, [fetchAlertDetails]);
+    let ignore = false;
+    Promise.all([
+      tauriCommands.getSecurityAlertDetails(alertId),
+      tauriCommands.getAlertEvidence(alertId),
+    ]).then(
+      ([d, ev]) => {
+        if (!ignore) {
+          setDetails(d);
+          setEvidenceEvents(ev);
+          setIsLoading(false);
+        }
+      },
+      (err: unknown) => {
+        if (!ignore) {
+          setErrorMessage(err instanceof Error ? err.message : String(err));
+          setIsLoading(false);
+        }
+      }
+    );
+    return () => {
+      ignore = true;
+    };
+  }, [alertId]);
 
   const handlePerformAction = async () => {
     if (!actionType) return;

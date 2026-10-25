@@ -32,6 +32,17 @@ pub struct AuditEntry {
     pub details_json: serde_json::Value,
 }
 
+/// Maximum allowed length in bytes for an audit actor identity.
+pub const MAX_AUDIT_ACTOR_LEN: usize = 64;
+/// Maximum allowed length in bytes for an audit action name.
+pub const MAX_AUDIT_ACTION_LEN: usize = 64;
+/// Maximum allowed length in bytes for an audit target type classification.
+pub const MAX_AUDIT_TARGET_TYPE_LEN: usize = 64;
+/// Maximum allowed length in bytes for an audit target identifier.
+pub const MAX_AUDIT_TARGET_ID_LEN: usize = 128;
+/// Maximum allowed serialized byte size for audit details JSON (64 KB).
+pub const MAX_AUDIT_DETAILS_BYTES: usize = 65_536;
+
 impl AuditEntry {
     /// Creates a new audit entry with a generated UUID and current UTC timestamp.
     #[must_use]
@@ -51,6 +62,63 @@ impl AuditEntry {
             target_id,
             details_json,
         }
+    }
+
+    /// Validates audit entry fields against defensive size and integrity boundaries.
+    ///
+    /// # Errors
+    /// Returns [`StorageError::InvalidParameter`] if any field violates boundary invariants.
+    pub fn validate(&self) -> Result<(), StorageError> {
+        let actor = self.actor.trim();
+        if actor.is_empty() || actor.len() > MAX_AUDIT_ACTOR_LEN {
+            return Err(StorageError::InvalidParameter(format!(
+                "Audit actor must be non-empty and <= {MAX_AUDIT_ACTOR_LEN} bytes (got {})",
+                self.actor.len()
+            )));
+        }
+
+        let action = self.action.trim();
+        if action.is_empty() || action.len() > MAX_AUDIT_ACTION_LEN {
+            return Err(StorageError::InvalidParameter(format!(
+                "Audit action must be non-empty and <= {MAX_AUDIT_ACTION_LEN} bytes (got {})",
+                self.action.len()
+            )));
+        }
+
+        let target_type = self.target_type.trim();
+        if target_type.is_empty() || target_type.len() > MAX_AUDIT_TARGET_TYPE_LEN {
+            return Err(StorageError::InvalidParameter(format!(
+                "Audit target_type must be non-empty and <= {MAX_AUDIT_TARGET_TYPE_LEN} bytes (got {})",
+                self.target_type.len()
+            )));
+        }
+
+        if let Some(ref tid) = self.target_id
+            && (tid.trim().is_empty() || tid.len() > MAX_AUDIT_TARGET_ID_LEN)
+        {
+            return Err(StorageError::InvalidParameter(format!(
+                "Audit target_id must be non-empty and <= {MAX_AUDIT_TARGET_ID_LEN} bytes (got {})",
+                tid.len()
+            )));
+        }
+
+        let details_str = serde_json::to_string(&self.details_json)?;
+        if details_str.len() > MAX_AUDIT_DETAILS_BYTES {
+            return Err(StorageError::InvalidParameter(format!(
+                "Audit details JSON exceeds maximum allowed size of {MAX_AUDIT_DETAILS_BYTES} bytes (got {})",
+                details_str.len()
+            )));
+        }
+
+        let max_future = Utc::now() + chrono::Duration::minutes(5);
+        if self.timestamp > max_future {
+            return Err(StorageError::InvalidParameter(format!(
+                "Audit timestamp {} exceeds future clock skew boundary",
+                self.timestamp
+            )));
+        }
+
+        Ok(())
     }
 }
 
@@ -149,6 +217,7 @@ impl AuditLogRepository {
     where
         E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
     {
+        entry.validate()?;
         let id_str = entry.id.to_string();
         let timestamp_str = entry.timestamp.to_rfc3339();
         let details_str = serde_json::to_string(&entry.details_json)?;

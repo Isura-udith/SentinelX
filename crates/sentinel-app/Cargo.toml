@@ -34,3 +34,12 @@ tempfile.workspace = true
 [[test]]
 name = "detection_pipeline"
 path = "../../tests/detection_pipeline.rs"
+
+[[test]]
+name = "failure_injection"
+path = "../../tests/failure_injection.rs"
+
+[[test]]
+name = "benchmark_measurements"
+path = "../../tests/benchmark_measurements.rs"
+

@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/2.0/crates/tauri-utils/schema.json",
   "identifier": "default",
   "description": "Default capabilities for SentinelX Desktop application",
-  "windows": ["*"],
+  "windows": ["main"],
   "permissions": [
     "core:default"
   ]

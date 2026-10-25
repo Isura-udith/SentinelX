@@ -67,14 +67,16 @@ pub struct DashboardSummaryDto {
     pub events_last_hour: usize,
     pub open_alerts: usize,
     pub high_and_critical_alerts: usize,
+    pub high_critical_alerts: usize,
     pub successful_collections: u64,
     pub detection_status: String,
+    pub detection_healthy: bool,
     pub severity_distribution: AlertSeverityDistributionDto,
     pub activity_time_series: Vec<TimeSeriesBucketDto>,
     pub recent_alerts: Vec<AlertDto>,
     pub recent_events: Vec<NetworkEventDto>,
     pub collector_name: String,
-    pub collector_status: String,
+    pub collector_status: TelemetryStatusDto,
     pub collection_duration_ms: u64,
 }
 
@@ -84,12 +86,14 @@ pub struct NetworkEventDto {
     pub id: String,
     pub timestamp: DateTime<Utc>,
     pub source: String,
+    pub telemetry_source: String,
     pub protocol: String,
     pub source_ip: Option<String>,
     pub source_port: Option<u16>,
     pub destination_ip: Option<String>,
     pub destination_port: Option<u16>,
     pub process_id: Option<u32>,
+    pub socket_state: String,
     pub metadata: BTreeMap<String, String>,
     pub ingested_at: DateTime<Utc>,
 }
@@ -103,16 +107,26 @@ impl From<&PersistedEvent> for NetworkEventDto {
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
 
+        let socket_state = pe
+            .event
+            .metadata
+            .get("tcp_state")
+            .or_else(|| pe.event.metadata.get("socket_state"))
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "ESTABLISHED".to_string());
+
         Self {
             id: pe.event.id.to_string(),
             timestamp: pe.event.timestamp,
             source: pe.event.source.to_string(),
+            telemetry_source: pe.event.source.to_string(),
             protocol: pe.event.protocol.to_string(),
             source_ip: pe.event.source_ip.as_ref().map(ToString::to_string),
             source_port: pe.event.source_port,
             destination_ip: pe.event.destination_ip.as_ref().map(ToString::to_string),
             destination_port: pe.event.destination_port,
             process_id: pe.event.process_id.map(|p| p.as_u32()),
+            socket_state,
             metadata: meta_map,
             ingested_at: pe.ingested_at,
         }
@@ -136,6 +150,7 @@ pub struct AlertDto {
     pub event_count: usize,
     pub fingerprint: String,
     pub evidence_count: usize,
+    pub evidence_event_count: usize,
     pub source_ip: Option<String>,
 }
 
@@ -164,6 +179,7 @@ impl From<&PersistedAlert> for AlertDto {
             event_count: pa.event_count,
             fingerprint: pa.fingerprint.clone(),
             evidence_count: pa.evidence_event_ids.len(),
+            evidence_event_count: pa.evidence_event_ids.len(),
             source_ip,
         }
     }
@@ -172,7 +188,10 @@ impl From<&PersistedAlert> for AlertDto {
 /// Alert details with supporting evidence and associated audit trail.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AlertDetailsDto {
+    #[serde(flatten)]
     pub alert: AlertDto,
+    pub evidence_event_ids: Vec<String>,
+    pub associated_audit_history: Vec<AuditEntryDto>,
     pub evidence_events: Vec<NetworkEventDto>,
     pub total_evidence_count: usize,
     pub retained_evidence_count: usize,
@@ -214,13 +233,15 @@ pub struct TelemetryStatusDto {
     pub is_running: bool,
     pub polling_interval_ms: u64,
     pub last_attempt: Option<DateTime<Utc>>,
+    pub last_success: Option<DateTime<Utc>>,
     pub last_successful_collection: Option<DateTime<Utc>>,
     pub raw_records_observed: u64,
     pub normalized_events_produced: u64,
     pub skipped_records: u64,
     pub collection_failures: u64,
-    pub recent_duration_ms: u64,
+    pub recent_duration_ms: Option<f64>,
     pub average_duration_ms: f64,
+    pub last_error: Option<String>,
     pub most_recent_error: Option<String>,
 }
 
@@ -255,6 +276,7 @@ impl From<&AuditEntry> for AuditEntryDto {
 pub struct PaginatedResponse<T> {
     pub items: Vec<T>,
     pub total: usize,
+    pub total_count: usize,
     pub limit: usize,
     pub offset: usize,
 }
@@ -430,18 +452,17 @@ pub async fn get_dashboard_summary_impl(
         .map(NetworkEventDto::from)
         .collect();
 
-    let (collector_name, collector_status, duration_ms, collections_count) = {
+    let (
+        collector_name,
+        collector_status_dto,
+        duration_ms,
+        collections_count,
+        is_running,
+        has_error,
+    ) = {
         let ctrl = state.telemetry_control.lock().await;
         let coord = state.coordinator.lock().await;
         let stats = coord.collection_stats();
-
-        let status_str = if !ctrl.is_running {
-            "stopped"
-        } else if ctrl.last_error.is_some() {
-            "degraded"
-        } else {
-            "running"
-        };
 
         let mode_name = if ctrl.mode == "mock" {
             "Deterministic Mock Telemetry Collector"
@@ -449,15 +470,51 @@ pub async fn get_dashboard_summary_impl(
             "Windows TCP Connection Snapshot Collector"
         };
 
+        let collector_mode = if ctrl.mode == "mock" {
+            "Deterministic Mock"
+        } else {
+            "Live Windows TCP Snapshot (GetExtendedTcpTable)"
+        };
+
+        let duration_f64 = stats.most_recent_duration.map(|d| d.as_secs_f64() * 1000.0);
+
+        let status_dto = TelemetryStatusDto {
+            collector_type: mode_name.to_string(),
+            collector_mode: collector_mode.to_string(),
+            is_running: ctrl.is_running,
+            polling_interval_ms: ctrl.polling_interval_ms,
+            last_attempt: ctrl.last_attempt,
+            last_success: ctrl.last_success,
+            last_successful_collection: ctrl.last_success,
+            raw_records_observed: stats.raw_records_observed,
+            normalized_events_produced: stats.normalized_events_produced,
+            skipped_records: stats.records_skipped,
+            collection_failures: stats.failed_cycles,
+            recent_duration_ms: duration_f64,
+            average_duration_ms: duration_f64.unwrap_or(0.0),
+            last_error: ctrl.last_error.clone(),
+            most_recent_error: ctrl.last_error.clone(),
+        };
+
         (
             mode_name.to_string(),
-            status_str.to_string(),
+            status_dto,
             stats
                 .most_recent_duration
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0),
             stats.successful_cycles,
+            ctrl.is_running,
+            ctrl.last_error.is_some(),
         )
+    };
+
+    let detection_status = if !is_running {
+        "stopped".to_string()
+    } else if has_error {
+        "degraded".to_string()
+    } else {
+        "operational".to_string()
     };
 
     Ok(DashboardSummaryDto {
@@ -465,18 +522,16 @@ pub async fn get_dashboard_summary_impl(
         events_last_hour,
         open_alerts,
         high_and_critical_alerts,
+        high_critical_alerts: high_and_critical_alerts,
         successful_collections: collections_count,
-        detection_status: if collector_status == "running" {
-            "operational".to_string()
-        } else {
-            collector_status.clone()
-        },
+        detection_status,
+        detection_healthy: !has_error,
         severity_distribution,
         activity_time_series,
         recent_alerts,
         recent_events,
         collector_name,
-        collector_status,
+        collector_status: collector_status_dto,
         collection_duration_ms: duration_ms,
     })
 }
@@ -493,9 +548,41 @@ pub async fn query_network_events_impl(
     state: &AppState,
     params: EventQueryParams,
 ) -> Result<PaginatedResponse<NetworkEventDto>, AppError> {
+    if let Some(ref s) = params.source_ip {
+        if s.len() > 64 {
+            return Err(AppError::Validation(
+                "Source IP string must not exceed 64 characters".to_string(),
+            ));
+        }
+    }
+
+    if let Some(ref d) = params.destination_ip {
+        if d.len() > 64 {
+            return Err(AppError::Validation(
+                "Destination IP string must not exceed 64 characters".to_string(),
+            ));
+        }
+    }
+
+    if let Some(ref t) = params.search_text {
+        if t.len() > 256 {
+            return Err(AppError::Validation(
+                "Search text must not exceed 256 characters".to_string(),
+            ));
+        }
+    }
+
+    let limit = params.limit.unwrap_or(50).clamp(1, 500);
+    let offset = params.offset.unwrap_or(0);
+    if offset > 1_000_000 {
+        return Err(AppError::Validation(
+            "Query offset exceeds maximum limit of 1,000,000".to_string(),
+        ));
+    }
+
     let mut filter = EventQueryFilter::new()
-        .with_limit(params.limit.unwrap_or(50))
-        .with_offset(params.offset.unwrap_or(0));
+        .with_limit(limit)
+        .with_offset(offset);
 
     if let Some(src_str) = params.source_ip {
         if !src_str.trim().is_empty() {
@@ -579,6 +666,7 @@ pub async fn query_network_events_impl(
     Ok(PaginatedResponse {
         items,
         total,
+        total_count: total,
         limit: filter.limit,
         offset: filter.offset,
     })
@@ -616,9 +704,25 @@ pub async fn query_security_alerts_impl(
     state: &AppState,
     params: AlertQueryParams,
 ) -> Result<PaginatedResponse<AlertDto>, AppError> {
+    if let Some(ref t) = params.search_text {
+        if t.len() > 256 {
+            return Err(AppError::Validation(
+                "Search text must not exceed 256 characters".to_string(),
+            ));
+        }
+    }
+
+    let limit = params.limit.unwrap_or(50).clamp(1, 500);
+    let offset = params.offset.unwrap_or(0);
+    if offset > 1_000_000 {
+        return Err(AppError::Validation(
+            "Query offset exceeds maximum limit of 1,000,000".to_string(),
+        ));
+    }
+
     let mut filter = AlertQueryFilter::new()
-        .with_limit(params.limit.unwrap_or(50))
-        .with_offset(params.offset.unwrap_or(0));
+        .with_limit(limit)
+        .with_offset(offset);
 
     if let Some(status_str) = params.status {
         if !status_str.trim().is_empty() && status_str != "all" {
@@ -665,6 +769,7 @@ pub async fn query_security_alerts_impl(
     Ok(PaginatedResponse {
         items,
         total,
+        total_count: total,
         limit: filter.limit,
         offset: filter.offset,
     })
@@ -707,10 +812,18 @@ pub async fn get_security_alert_details_impl(
         .with_target("alert", Some(alert.id.to_string()))
         .with_limit(100);
     let audit_raw = state.audit_repo.query_entries(&audit_filter).await?;
-    let audit_history = audit_raw.iter().map(AuditEntryDto::from).collect();
+    let audit_history: Vec<AuditEntryDto> = audit_raw.iter().map(AuditEntryDto::from).collect();
+
+    let evidence_event_ids = alert
+        .evidence_event_ids
+        .iter()
+        .map(ToString::to_string)
+        .collect();
 
     Ok(Some(AlertDetailsDto {
         alert: AlertDto::from(&alert),
+        evidence_event_ids,
+        associated_audit_history: audit_history.clone(),
         evidence_events,
         total_evidence_count,
         retained_evidence_count,
@@ -730,13 +843,12 @@ pub async fn get_security_alert_details(
 pub async fn get_alert_evidence_impl(
     state: &AppState,
     alert_id: String,
-) -> Result<AlertEvidenceResponseDto, AppError> {
+) -> Result<Vec<NetworkEventDto>, AppError> {
     let uuid = Uuid::parse_str(alert_id.trim())
         .map_err(|e| AppError::Validation(format!("Invalid alert UUID: {e}")))?;
     let aid = AlertId::from_uuid(uuid);
 
     let evidence_ids = state.alert_repo.get_alert_evidence(aid).await?;
-    let total_evidence_ids = evidence_ids.len();
     let mut events = Vec::new();
 
     for &eid in &evidence_ids {
@@ -745,24 +857,14 @@ pub async fn get_alert_evidence_impl(
         }
     }
 
-    let retained_count = events.len();
-    let purged_count = total_evidence_ids.saturating_sub(retained_count);
-    let is_expired = total_evidence_ids > 0 && retained_count == 0;
-
-    Ok(AlertEvidenceResponseDto {
-        events,
-        total_evidence_ids,
-        retained_count,
-        purged_count,
-        is_expired,
-    })
+    Ok(events)
 }
 
 #[tauri::command]
 pub async fn get_alert_evidence(
     state: State<'_, Arc<AppState>>,
     alert_id: String,
-) -> Result<AlertEvidenceResponseDto, AppError> {
+) -> Result<Vec<NetworkEventDto>, AppError> {
     get_alert_evidence_impl(&state, alert_id).await
 }
 
@@ -771,6 +873,14 @@ pub async fn acknowledge_alert_impl(
     alert_id: String,
     note: Option<String>,
 ) -> Result<(), AppError> {
+    if let Some(ref n) = note {
+        if n.len() > 1024 {
+            return Err(AppError::Validation(
+                "Analyst note must not exceed 1024 characters".to_string(),
+            ));
+        }
+    }
+
     let uuid = Uuid::parse_str(alert_id.trim())
         .map_err(|e| AppError::Validation(format!("Invalid alert UUID: {e}")))?;
     let aid = AlertId::from_uuid(uuid);
@@ -810,6 +920,14 @@ pub async fn resolve_alert_impl(
     alert_id: String,
     note: Option<String>,
 ) -> Result<(), AppError> {
+    if let Some(ref n) = note {
+        if n.len() > 1024 {
+            return Err(AppError::Validation(
+                "Analyst note must not exceed 1024 characters".to_string(),
+            ));
+        }
+    }
+
     let uuid = Uuid::parse_str(alert_id.trim())
         .map_err(|e| AppError::Validation(format!("Invalid alert UUID: {e}")))?;
     let aid = AlertId::from_uuid(uuid);
@@ -922,6 +1040,12 @@ pub async fn update_detection_rule_impl(
     state: &AppState,
     input: UpdateDetectionRuleInput,
 ) -> Result<(), AppError> {
+    if input.rule_id != "NET-001" && input.rule_id != "NET-002" {
+        return Err(AppError::Validation(format!(
+            "Unsupported rule ID '{}'; only NET-001 and NET-002 are supported",
+            input.rule_id
+        )));
+    }
     if input.threshold == 0 {
         return Err(AppError::Validation(
             "Rule threshold must be greater than zero".to_string(),
@@ -1007,25 +1131,23 @@ pub async fn get_telemetry_status_impl(state: &AppState) -> Result<TelemetryStat
         "Live Windows TCP Snapshot (GetExtendedTcpTable)"
     };
 
+    let duration_f64 = stats.most_recent_duration.map(|d| d.as_secs_f64() * 1000.0);
+
     Ok(TelemetryStatusDto {
         collector_type: collector_type.to_string(),
         collector_mode: collector_mode.to_string(),
         is_running: ctrl.is_running,
         polling_interval_ms: ctrl.polling_interval_ms,
         last_attempt: ctrl.last_attempt,
+        last_success: ctrl.last_success,
         last_successful_collection: ctrl.last_success,
         raw_records_observed: stats.raw_records_observed,
         normalized_events_produced: stats.normalized_events_produced,
         skipped_records: stats.records_skipped,
         collection_failures: stats.failed_cycles,
-        recent_duration_ms: stats
-            .most_recent_duration
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0),
-        average_duration_ms: stats
-            .most_recent_duration
-            .map(|d| d.as_secs_f64() * 1000.0)
-            .unwrap_or(0.0),
+        recent_duration_ms: duration_f64,
+        average_duration_ms: duration_f64.unwrap_or(0.0),
+        last_error: ctrl.last_error.clone(),
         most_recent_error: ctrl.last_error.clone(),
     })
 }
@@ -1119,9 +1241,46 @@ pub async fn get_audit_history_impl(
     state: &AppState,
     params: AuditQueryParams,
 ) -> Result<PaginatedResponse<AuditEntryDto>, AppError> {
+    if let Some(ref a) = params.actor {
+        if a.len() > 128 {
+            return Err(AppError::Validation(
+                "Audit query actor must not exceed 128 characters".to_string(),
+            ));
+        }
+    }
+    if let Some(ref a) = params.action {
+        if a.len() > 128 {
+            return Err(AppError::Validation(
+                "Audit query action must not exceed 128 characters".to_string(),
+            ));
+        }
+    }
+    if let Some(ref t) = params.target_type {
+        if t.len() > 128 {
+            return Err(AppError::Validation(
+                "Audit query target_type must not exceed 128 characters".to_string(),
+            ));
+        }
+    }
+    if let Some(ref t) = params.target_id {
+        if t.len() > 128 {
+            return Err(AppError::Validation(
+                "Audit query target_id must not exceed 128 characters".to_string(),
+            ));
+        }
+    }
+
+    let limit = params.limit.unwrap_or(50).clamp(1, 500);
+    let offset = params.offset.unwrap_or(0);
+    if offset > 1_000_000 {
+        return Err(AppError::Validation(
+            "Query offset exceeds maximum limit of 1,000,000".to_string(),
+        ));
+    }
+
     let mut filter = AuditQueryFilter::new()
-        .with_limit(params.limit.unwrap_or(50))
-        .with_offset(params.offset.unwrap_or(0));
+        .with_limit(limit)
+        .with_offset(offset);
 
     if let Some(actor) = params.actor {
         if !actor.trim().is_empty() {
@@ -1164,6 +1323,7 @@ pub async fn get_audit_history_impl(
     Ok(PaginatedResponse {
         items,
         total,
+        total_count: total,
         limit: filter.limit,
         offset: filter.offset,
     })
@@ -1199,7 +1359,13 @@ pub async fn update_application_settings_impl(
     };
 
     if let Some(theme) = input.theme {
-        settings.theme = theme;
+        let trimmed = theme.trim().to_lowercase();
+        if trimmed != "dark" && trimmed != "light" && trimmed != "system" {
+            return Err(AppError::Validation(
+                "Theme must be one of: 'dark', 'light', 'system'".to_string(),
+            ));
+        }
+        settings.theme = trimmed;
     }
 
     if let Some(refresh) = input.refresh_interval_secs {
@@ -1248,7 +1414,14 @@ pub async fn update_application_settings_impl(
     }
 
     if let Some(verbosity) = input.log_verbosity {
-        settings.log_verbosity = verbosity;
+        let trimmed = verbosity.trim().to_lowercase();
+        if !["trace", "debug", "info", "warn", "error"].contains(&trimmed.as_str()) {
+            return Err(AppError::Validation(
+                "Log verbosity must be one of: 'trace', 'debug', 'info', 'warn', 'error'"
+                    .to_string(),
+            ));
+        }
+        settings.log_verbosity = trimmed;
     }
 
     if let Some(demo_mode) = input.is_demo_mode {

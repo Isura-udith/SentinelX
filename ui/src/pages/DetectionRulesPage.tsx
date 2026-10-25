@@ -49,8 +49,25 @@ export const DetectionRulesPage: React.FC<DetectionRulesPageProps> = ({ onAddToa
   }, []);
 
   useEffect(() => {
-    fetchRules();
-  }, [fetchRules]);
+    let ignore = false;
+    tauriCommands.getDetectionRules().then(
+      (res) => {
+        if (!ignore) {
+          setRules(res);
+          setIsLoading(false);
+        }
+      },
+      (err: unknown) => {
+        if (!ignore) {
+          setErrorMessage(err instanceof Error ? err.message : String(err));
+          setIsLoading(false);
+        }
+      }
+    );
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const handleOpenEdit = (rule: DetectionRule) => {
     setEditingRule(rule);

@@ -287,6 +287,7 @@ impl PipelineCoordinator {
         }
 
         // 4. Alert Correlation and Durable Evidence Persistence (Section 14)
+        let mut successfully_persisted_alerts = Vec::new();
         for alert in &detected_alerts {
             let src_str = alert
                 .source_ip
@@ -319,6 +320,9 @@ impl PipelineCoordinator {
                         severity = %alert.severity,
                         "Created new persistent security alert"
                     );
+                    let mut persisted = alert.clone();
+                    persisted.id = new_id;
+                    successfully_persisted_alerts.push(persisted);
                 }
                 Ok(CorrelationOutcome::Updated {
                     alert_id,
@@ -334,6 +338,9 @@ impl PipelineCoordinator {
                         last_seen = %updated_last_seen,
                         "Updated existing active security alert with correlated evidence"
                     );
+                    let mut persisted = alert.clone();
+                    persisted.id = alert_id;
+                    successfully_persisted_alerts.push(persisted);
                 }
                 Err(err) => {
                     self.metrics.database_errors.fetch_add(1, Ordering::Relaxed);
@@ -342,7 +349,7 @@ impl PipelineCoordinator {
             }
         }
 
-        Ok(detected_alerts)
+        Ok(successfully_persisted_alerts)
     }
 
     /// Executes an explicit retention cleanup cycle.

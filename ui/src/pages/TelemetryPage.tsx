@@ -39,8 +39,25 @@ export const TelemetryPage: React.FC<TelemetryPageProps> = ({ onAddToast }) => {
   }, []);
 
   useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+    let ignore = false;
+    tauriCommands.getTelemetryStatus().then(
+      (res) => {
+        if (!ignore) {
+          setStatus(res);
+          setIsLoading(false);
+        }
+      },
+      (err: unknown) => {
+        if (!ignore) {
+          setErrorMessage(err instanceof Error ? err.message : String(err));
+          setIsLoading(false);
+        }
+      }
+    );
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const handleStart = async () => {
     setIsActionPending(true);

@@ -61,8 +61,33 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   }, []);
 
   useEffect(() => {
-    fetchSettings();
-  }, [fetchSettings]);
+    let ignore = false;
+    tauriCommands.getApplicationSettings().then(
+      (res) => {
+        if (!ignore) {
+          setSettings(res);
+          setTheme(res.theme);
+          setRefreshInterval(res.refresh_interval_secs);
+          setPageSize(res.event_table_page_size);
+          setEventRetention(res.event_retention_days);
+          setAuditRetention(res.audit_retention_days);
+          setPollingInterval(res.telemetry_polling_interval_ms);
+          setLogVerbosity(res.log_verbosity);
+          setIsDemoMode(res.is_demo_mode);
+          setIsLoading(false);
+        }
+      },
+      (err: unknown) => {
+        if (!ignore) {
+          setErrorMessage(err instanceof Error ? err.message : String(err));
+          setIsLoading(false);
+        }
+      }
+    );
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();

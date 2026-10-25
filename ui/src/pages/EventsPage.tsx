@@ -77,8 +77,44 @@ export const EventsPage: React.FC = () => {
   }, [limit, offset, sortDesc, searchText, protocol, sourceIp, destinationIp, destinationPort, telemetrySource]);
 
   useEffect(() => {
-    fetchEvents();
-  }, [fetchEvents]);
+    let ignore = false;
+    const params: EventQueryParams = {
+      limit,
+      offset,
+      sort_desc: sortDesc,
+    };
+
+    if (searchText.trim()) params.search_text = searchText.trim();
+    if (protocol) params.protocol = protocol;
+    if (sourceIp.trim()) params.source_ip = sourceIp.trim();
+    if (destinationIp.trim()) params.destination_ip = destinationIp.trim();
+    if (destinationPort.trim()) {
+      const p = parseInt(destinationPort.trim(), 10);
+      if (!isNaN(p) && p > 0 && p <= 65535) {
+        params.destination_port = p;
+      }
+    }
+    if (telemetrySource) params.telemetry_source = telemetrySource;
+
+    tauriCommands.queryNetworkEvents(params).then(
+      (res) => {
+        if (!ignore) {
+          setEvents(res.items);
+          setTotalCount(res.total_count);
+          setIsLoading(false);
+        }
+      },
+      (err: unknown) => {
+        if (!ignore) {
+          setErrorMessage(err instanceof Error ? err.message : String(err));
+          setIsLoading(false);
+        }
+      }
+    );
+    return () => {
+      ignore = true;
+    };
+  }, [limit, offset, sortDesc, searchText, protocol, sourceIp, destinationIp, destinationPort, telemetrySource]);
 
   const handleOpenDetails = async (id: string) => {
     setSelectedEventId(id);

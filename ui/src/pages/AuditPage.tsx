@@ -58,8 +58,34 @@ export const AuditPage: React.FC = () => {
   }, [limit, offset, actionFilter, targetTypeFilter, actorFilter]);
 
   useEffect(() => {
-    fetchAuditHistory();
-  }, [fetchAuditHistory]);
+    let ignore = false;
+    const params: AuditQueryParams = {
+      limit,
+      offset,
+    };
+    if (actionFilter) params.action = actionFilter;
+    if (targetTypeFilter) params.target_type = targetTypeFilter;
+    if (actorFilter.trim()) params.actor = actorFilter.trim();
+
+    tauriCommands.getAuditHistory(params).then(
+      (res) => {
+        if (!ignore) {
+          setEntries(res.items);
+          setTotalCount(res.total_count);
+          setIsLoading(false);
+        }
+      },
+      (err: unknown) => {
+        if (!ignore) {
+          setErrorMessage(err instanceof Error ? err.message : String(err));
+          setIsLoading(false);
+        }
+      }
+    );
+    return () => {
+      ignore = true;
+    };
+  }, [limit, offset, actionFilter, targetTypeFilter, actorFilter]);
 
   const handleResetFilters = () => {
     setActionFilter('');

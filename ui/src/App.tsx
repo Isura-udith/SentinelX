@@ -58,8 +58,28 @@ export const App: React.FC = () => {
 
   // Initial load
   useEffect(() => {
-    refreshCoreData(true);
-  }, [refreshCoreData]);
+    let ignore = false;
+    Promise.all([
+      tauriCommands.getSystemStatus(),
+      tauriCommands.getDashboardSummary(timeRange),
+    ])
+      .then(([status, summary]) => {
+        if (!ignore) {
+          setSystemStatus(status);
+          setDashboardSummary(summary);
+          setIsRefreshing(false);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!ignore) {
+          console.error('Failed to refresh core system state:', err);
+          setIsRefreshing(false);
+        }
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [timeRange]);
 
   // Periodic background refresh (default 10s or per user setting)
   useEffect(() => {

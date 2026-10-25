@@ -8,10 +8,11 @@ SentinelX is a modular, high-performance Rust defensive cybersecurity monitoring
 
 Built as an advanced systems engineering and security architecture portfolio project, SentinelX demonstrates strict memory safety, zero-panic defensive coding, safe native Windows API integration, deterministic analytical engines, transactional SQLite persistence, stateful event-time rolling-window detection, alert correlation, property-based verification, and enterprise-grade modular design.
 
-> **Operational Notice (Phase 3)**:
-> SentinelX collects **point-in-time TCP connection table snapshots** via native Windows IP Helper APIs (`GetExtendedTcpTable`) in **read-only mode**.
-> It operates with **standard user permissions** (no administrator rights needed), requires **no kernel or packet capture drivers**, and **neither modifies nor terminates network sockets**.
-> Connection records and security alerts are durably persisted to a local **SQLite database** in Write-Ahead Logging (WAL) mode with embedded migrations and foreign-key integrity. A deterministic mock collector is provided for non-Windows development and automated testing.
+> **Operational Notice (Phase 5 Release Candidate)**:
+> SentinelX is a hardened defensive cybersecurity monitoring platform for Windows 11.
+> It collects **point-in-time TCP connection table snapshots** via native Windows IP Helper APIs (`GetExtendedTcpTable`) in **read-only mode**.
+> It operates with **standard user permissions** (no administrator rights or UAC elevation needed), requires **no kernel or packet capture drivers**, and **neither modifies nor terminates network sockets**.
+> Connection records and security alerts are durably persisted to a local **SQLite database** in Write-Ahead Logging (WAL) mode with embedded migrations and foreign-key integrity. A desktop interface is provided via **Tauri 2**, React 19, and Tailwind CSS.
 
 ---
 
@@ -306,11 +307,16 @@ Generated Security Alerts (1):
 
 ## Documentation Index
 
+- [Threat Model](docs/threat-model.md): Comprehensive STRIDE threat analysis, asset boundaries, mitigations, and residual risks.
+- [Security Review Report](docs/security-review.md): Audit findings, unsafe Rust isolation, Tauri capability hardening, and error sanitization.
+- [Release Security](docs/release-security.md): Toolchains, dependency audits, build verification, unsigned installer disclosures, and accepted risks.
+- [Performance & Benchmarks](docs/performance.md): Empirical measurements (17k+ events/sec ingestion, 631k events/sec detection), latency baselines, and resource bounds.
+- [Operations Runbook](docs/operations.md): Application lifecycle, graceful shutdown, SQLite backup, retention execution, and emergency disaster recovery.
+- [Testing Guide](docs/testing.md): Automated verification framework, failure injection tests, property-based invariants, and reproduction commands.
 - [Architecture Overview](docs/architecture.md): Workspace crate decoupling, `sentinel-storage`, `TelemetryCollector` trait, and pipeline coordinator.
 - [Database Schema Specification](docs/database-schema.md): Full documentation of SQLite tables, indexes, constraints, and embedded migrations.
 - [Data Retention Policy](docs/retention-policy.md): Specification of retention windows, evidence preservation guarantees, and batched cleanup.
 - [Detection Rules Guide](docs/detection-rules.md): Specification of `NET-001` and `NET-002`, rolling-window semantics, threshold calculation, and false-positive baselines.
-- [Testing Guide](docs/testing.md): Automated testing framework, integration test suites, property-based invariants, and reproduction instructions.
 - [Security Architecture](docs/security.md): Least privilege design, non-invasive guarantees, standard-user permissions, and input bounding.
 - [Security Policy](SECURITY.md): Vulnerability reporting, database security, and SQL injection prevention.
 - [Domain Model Specification](docs/domain-model.md): Detailed schemas for `NetworkEvent`, `SecurityAlert`, `DetectionConfig`, and validation rules.
@@ -325,10 +331,11 @@ Generated Security Alerts (1):
 3. **No Packet Payload Capture**: Telemetry contains connection metadata only (IP, port, PID, TCP state). Payload bytes and packet headers are not collected.
 4. **Localhost IPC Signals**: Legitimate developer tools and microservices communicating over loopback (`127.0.0.1`) can trigger port sweep alerts if the threshold is configured below baseline usage.
 5. **In-Memory Rolling Window Reset**: Detection rolling-window state is maintained in-memory for zero-latency evaluation and resets on application restart; historical alerts and evidence remain durable in SQLite.
+6. **Local Same-User Tampering**: In an unmanaged desktop environment, another process operating under the same Windows user session has OS permissions to access `%LOCALAPPDATA%\SentinelX\sentinelx.db`.
 
 ---
 
-## Roadmap & Future Milestones
+## Roadmap & Milestone Status
 
 - **Phase 1 (Foundation & Domain Model)**: *Completed*
   - Workspace structure, core domain types, detection engine, `NET-001` rule, property-based testing.
@@ -352,15 +359,22 @@ Generated Security Alerts (1):
   - Interactive alert triage with evidence inspection, status transitions (`Acknowledge`, `Resolve`), and audit trail.
   - Real-time IPC event notifications (`sentinel://*`) without busy polling.
   - Preservation of headless CLI monitoring mode (`--cli`).
-- **Phase 5 (Advanced Telemetry & Correlation)**:
-  - Windows ETW (Event Tracing for Windows) integration for real-time connection event streams.
-  - UDP endpoint tracking via `GetExtendedUdpTable`.
+- **Phase 5 (Security Hardening and Integration)**: *Completed*
+  - Comprehensive STRIDE threat model (`docs/threat-model.md`).
+  - Tauri capability restrictions (`core:default`, `windows: ["main"]`) and restrictive Content Security Policy.
+  - Safe Windows API isolation with `SAFETY` contracts and `MAX_SNAPSHOT_RECORDS` bounds check.
+  - Frontend input validation and error sanitization (`AppError`) suppressing internal paths and SQL.
+  - SQLite security hardening, parameterized queries, and bounded conflict retries.
+  - Six failure injection integration tests covering corrupt configurations, audit limits, and collector faults.
+  - Empirical performance benchmark suite verifying 17k+ events/sec ingestion and 631k events/sec detection.
+  - Automated GitHub Actions CI workflow (`.github/workflows/ci.yml`).
+  - Zero-warning clean passes across `cargo fmt`, `cargo clippy`, `cargo test`, `oxlint`, and `npm audit`.
 
 ---
 
 ## Security & Scope
 
-SentinelX is strictly a defensive telemetry analysis framework. For full details on our threat model and security boundaries, see [SECURITY.md](SECURITY.md) and [docs/security.md](docs/security.md).
+SentinelX is strictly a defensive telemetry analysis framework. For full details on our threat model and security boundaries, see [SECURITY.md](SECURITY.md), [docs/threat-model.md](docs/threat-model.md), and [docs/security-review.md](docs/security-review.md).
 
 ---
 

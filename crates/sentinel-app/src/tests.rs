@@ -12,11 +12,10 @@ use sentinel_detection::rules::{ConnectionBurstConfig, ConnectionBurstRule, Port
 use sentinel_storage::alerts::PersistedAlert;
 use sentinel_storage::{Database, DatabaseConfig};
 use std::sync::Arc;
-use tempfile::NamedTempFile;
 
 async fn setup_test_app_state() -> Arc<AppState> {
-    let tmp = NamedTempFile::new().expect("temp db");
-    let db_path = tmp.path().to_path_buf();
+    let tmp_dir = tempfile::tempdir().expect("temp dir").keep();
+    let db_path = tmp_dir.join("test_sentinelx.db");
     let db_config = DatabaseConfig::new(&db_path);
     let database = Database::new(&db_config).await.expect("database init");
 
@@ -104,6 +103,7 @@ async fn test_event_query_validation() {
 #[tokio::test]
 async fn test_alert_lifecycle_and_invalid_transitions() {
     let state = setup_test_app_state().await;
+    let _ = stop_telemetry_impl(&state).await;
 
     // Create an initial open alert in storage
     let now = chrono::Utc::now();

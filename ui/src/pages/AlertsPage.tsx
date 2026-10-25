@@ -72,8 +72,36 @@ export const AlertsPage: React.FC<AlertsPageProps> = ({ onSelectAlert, onAddToas
   }, [limit, offset, searchText, severity, status, ruleId]);
 
   useEffect(() => {
-    fetchAlerts();
-  }, [fetchAlerts]);
+    let ignore = false;
+    const params: AlertQueryParams = {
+      limit,
+      offset,
+    };
+
+    if (searchText.trim()) params.search_text = searchText.trim();
+    if (severity) params.severity = severity as AlertSeverity;
+    if (status) params.status = status as AlertStatus;
+    if (ruleId) params.rule_id = ruleId;
+
+    tauriCommands.querySecurityAlerts(params).then(
+      (res) => {
+        if (!ignore) {
+          setAlerts(res.items);
+          setTotalCount(res.total_count);
+          setIsLoading(false);
+        }
+      },
+      (err: unknown) => {
+        if (!ignore) {
+          setErrorMessage(err instanceof Error ? err.message : String(err));
+          setIsLoading(false);
+        }
+      }
+    );
+    return () => {
+      ignore = true;
+    };
+  }, [limit, offset, searchText, severity, status, ruleId]);
 
   const handlePerformAction = async () => {
     if (!actionAlert) return;

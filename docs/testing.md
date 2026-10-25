@@ -5,18 +5,54 @@
 SentinelX implements a layered verification strategy to guarantee defensive stability, zero-panic execution, and mathematical invariants across all operational conditions.
 
 ```
-       [ Integration Tests ]       End-to-end pipeline: collector -> storage -> detection -> correlation -> alerts
+       [ Failure Injection Tests ]  Component failures, lock contention, invalid inputs, error sanitization
                ▲
-       [ Property Tests ]          Invariants tested with proptest across arbitrary inputs
+       [ Integration Tests ]        End-to-end pipeline: collector -> storage -> detection -> correlation -> alerts
                ▲
-       [ Unit Tests ]              Storage repositories, migrations, rolling windows, and boundary conditions
+       [ Property Tests ]           Invariants tested with proptest across arbitrary inputs
+               ▲
+       [ Unit Tests ]               Storage repositories, migrations, rolling windows, and boundary conditions
 ```
 
 ---
 
 ## 2. Test Suites Overview
 
-### 2.1 Database & Storage Integration Tests (`tests/storage_integration.rs`)
+### 2.1 Failure Injection & Boundary Integration Tests (`tests/failure_injection.rs`)
+
+Tests verify system resilience when subjected to abnormal conditions, malformed inputs, and injected failures:
+
+1. **`test_database_config_validation_rejections`**:
+   - Asserts that empty database paths, paths containing injected null bytes (`\0`), and configurations with `max_connections = 0` are rejected immediately prior to connection initialization.
+2. **`test_audit_entry_boundary_validations`**:
+   - Enforces length limits on `AuditEntry` fields (`MAX_AUDIT_ACTOR_LEN = 64`, `MAX_AUDIT_ACTION_LEN = 64`, `MAX_AUDIT_TARGET_TYPE_LEN = 64`, `MAX_AUDIT_TARGET_ID_LEN = 128`, `MAX_AUDIT_DETAILS_BYTES = 64 KB`).
+   - Asserts that entries with clock skew exceeding 5 minutes into the future are rejected.
+3. **`test_frontend_command_validation_rejections`**:
+   - Asserts that Tauri command input validators reject oversized search strings (> 256 chars), malformed or oversized IP strings (> 64 chars), invalid rule IDs outside the allowlist, and note lengths exceeding 1024 characters.
+4. **`test_collector_failure_injection_handling`**:
+   - Injects simulated Windows API native failures via `MockCollector::inject_failure(CollectorError::NativeApiFailure)`.
+   - Asserts that the pipeline coordinator records the error in telemetry stats without panicking, crashing, or falsely reporting collection success.
+5. **`test_empty_telemetry_snapshot_handling`**:
+   - Executes pipeline collection when the operating system returns zero established connections.
+   - Asserts that the cycle completes cleanly, produces 0 events and 0 alerts, and reports `last_success` accurately.
+6. **`test_invalid_alert_status_transitions_rejected`**:
+   - Tests alert lifecycle transitions and asserts that invalid transitions (e.g., from `Resolved` back to `Open` without reopening semantics) are rejected transactionally.
+
+---
+
+### 2.2 Empirical Performance Benchmark Suite (`tests/benchmark_measurements.rs`)
+
+Measures empirical throughput, latency, and resource limits under realistic synthetic workloads:
+- **Database Initialization & SQLite Migrations**: Measures cold database startup and schema migration duration (< 20 ms).
+- **Event Ingestion Throughput**: Tests batch ingestion of 5,000 synthetic events (target: >= 1,000 events/sec; measured: 17,252 events/sec).
+- **Detection Engine Evaluation**: Processes 5,000 events across active rules (target: >= 5,000 events/sec; measured: 631,241 events/sec).
+- **Alert Correlation Upsert Latency**: Executes 200 alert upserts (target: < 50 ms/upsert; measured: 0.58 ms/upsert).
+- **Dashboard Query Latencies**: Measures summary and paginated query response times (measured: < 7 ms).
+- **Retention Purge Latency**: Purges 4,800 events while preserving alert evidence (measured: 64.66 ms).
+
+---
+
+### 2.3 Database & Storage Integration Tests (`tests/storage_integration.rs`)
 
 Tests verify SQLite persistence, transactional guarantees, and repository interfaces against temporary on-disk SQLite databases:
 
@@ -33,7 +69,7 @@ Tests verify SQLite persistence, transactional guarantees, and repository interf
 
 ---
 
-### 2.2 End-to-End Pipeline Integration Tests (`tests/detection_pipeline.rs`)
+### 2.4 End-to-End Pipeline Integration Tests (`tests/detection_pipeline.rs`)
 
 Tests the complete operational lifecycle:
 1. Instantiates temporary file-backed SQLite database.
@@ -46,7 +82,7 @@ Tests the complete operational lifecycle:
 
 ---
 
-### 2.3 Detection Unit & Stateful Rolling-Window Tests
+### 2.5 Detection Unit & Stateful Rolling-Window Tests
 
 #### `sentinel-detection`
 - **`rules::port_scan::tests`**:
@@ -67,7 +103,7 @@ Tests the complete operational lifecycle:
 
 ---
 
-### 2.4 Property-Based Tests (`proptest`)
+### 2.6 Property-Based Tests (`proptest`)
 
 | Suite | Invariant Tested | Guarantee |
 | :--- | :--- | :--- |
@@ -87,26 +123,29 @@ Tests the complete operational lifecycle:
 
 ---
 
-## 3. Reproduction Commands
+### 2.7 Frontend Verification Suites (`ui/`)
 
-### Run Full Test Suite (Workspace-wide, 74+ tests)
+- **Type Checking (`npm run typecheck`)**: Compiles TypeScript files with `tsc --noEmit` to ensure strict typing across all React components, page models, and Tauri IPC interfaces.
+- **Static Analysis & Linting (`npm run lint`)**: Executes Oxlint across 29 files (116 rules), verifying 0 errors and 0 warnings.
+- **Unit & Integration Tests (`npm test`)**: Executes Vitest test suite (`ui/src/test/app.test.tsx`), verifying navigation, dashboard metrics rendering, alert table displays, and settings updates.
+
+---
+
+## 3. Verification Execution Commands
+
+### Run Full Rust Test Suite (Workspace-wide, 70 tests)
 ```powershell
 cargo test --workspace
 ```
 
-### Run Storage Integration Tests
+### Run Failure Injection Integration Suite
 ```powershell
-cargo test --test storage_integration
+cargo test --test failure_injection
 ```
 
-### Run Detection Pipeline Integration Tests
+### Run Performance Benchmark Suite
 ```powershell
-cargo test --test detection_pipeline
-```
-
-### Run All Integration Tests
-```powershell
-cargo test --tests
+cargo test --test benchmark_measurements -- --nocapture
 ```
 
 ### Run Code Formatting and Clippy Lints
@@ -115,7 +154,11 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-### Run SentinelX CLI with Mock Telemetry and Storage
+### Run Frontend Quality Checks
 ```powershell
-cargo run -p sentinel-app -- --mock --max-cycles 5 --db target/test_run.db
+cd ui
+npm run typecheck
+npm run lint
+npm test
+npm audit
 ```

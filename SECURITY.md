@@ -2,7 +2,7 @@
 
 ## Defensive Scope & Operational Philosophy
 
-SentinelX is developed strictly as a defensive telemetry monitoring, persistent auditing, and analytical detection platform.
+SentinelX is developed strictly as a defensive host telemetry monitoring, persistent auditing, and analytical detection platform for Windows 11.
 
 ### Non-Interference Guarantee
 SentinelX detection rules, storage engines, and schedulers operate in an observational capacity. The software:
@@ -15,51 +15,58 @@ Alerts emitted by SentinelX represent evidence-backed hypotheses for human secur
 
 ---
 
-## Database Security & Data Protection (Phase 3)
+## Supported Versions
 
-### 1. SQL Injection Prevention
-- All database operations in `sentinel-storage` utilize **parameterized SQL queries** via `sqlx`.
-- Raw string interpolation into SQL statements is strictly prohibited.
-- User input (such as CLI filter parameters) is strictly validated prior to query execution.
-
-### 2. Local Filesystem Permissions & Least Privilege
-- SentinelX stores connection records, alerts, and audit entries in a local SQLite file (`sentinelx.db`).
-- On Windows systems, the directory (`%LOCALAPPDATA%\SentinelX`) should be secured with NTFS Access Control Lists (ACLs) granting access only to the executing user account and `SYSTEM`.
-- The application never runs with broader filesystem or network listening permissions than required.
-
-### 3. Sensitive Data Handling
-- SentinelX records only connection metadata: source/destination IP addresses, ports, protocol, process ID, and TCP state.
-- It **never** captures, logs, or stores packet payload data, HTTP headers, authentication tokens, or keystrokes.
-- The `metadata_json` field enforces a strict byte size limit (max 4,096 bytes) and validated JSON structure.
-
-### 4. Audit Trail Integrity
-- Analyst triage actions (acknowledging an alert, resolving an alert) and retention runs are immutably appended to the `audit_log` table.
-- Audit logs maintain a minimum 90-day retention guarantee and cannot be deleted by standard alert resolution workflows.
-
-### 5. Migration Safety
-- Schema migrations are embedded at compile time using `sqlx::migrate!()`.
-- Migrations execute within discrete database transactions. If a migration step encounters an error, the transaction rolls back cleanly.
-- The application **never** attempts destructive database resets or deletes user databases upon startup failure.
+| Version | Supported | Description | Privileges Required |
+| :--- | :--- | :--- | :--- |
+| **0.2.x (Phase 5 Release Candidate)** | :white_check_mark: **Yes** | Hardened Windows 11 desktop app with Tauri 2, SQLite, and analytical detection rules | None (Standard user) |
+| **0.1.x** | :x: No | Historical development milestones | None (Standard user) |
 
 ---
 
-## Supported Environments
+## Defensive Architecture & Security Controls (Phase 5)
 
-| Phase | Platform | Status | Privileges Required |
-| :--- | :--- | :--- | :--- |
-| **Phase 1** | Windows 11 / Cross-platform synthetic verification | Complete | None (Standard user) |
-| **Phase 2** | Windows 11 (64-bit) TCP snapshot collector | Complete | None (Standard user) |
-| **Phase 3 (Current)** | Windows 11 (64-bit) / SQLite persistence & stateful detection | Complete | None (Standard user) |
-| **Phase 4 (Planned)** | Windows 11 ETW event-driven collection & desktop UI | Planned | Administrator (ETW session creation) |
+### 1. SQL Injection Prevention & Parameterization
+- 100% of database operations in `sentinel-storage` utilize **parameterized SQL queries** via `sqlx`.
+- Dynamic string concatenation for SQL statements is strictly prohibited across the codebase.
+- User input (such as CLI and UI filter parameters) is validated prior to query execution.
+
+### 2. Local Filesystem Permissions & Least Privilege
+- SentinelX stores connection records, alerts, and audit entries in a local SQLite file (`sentinelx.db`).
+- On Windows systems, the directory (`%LOCALAPPDATA%\SentinelX`) is secured with Windows NTFS Discretionary Access Control Lists (DACLs) granting access only to the executing user account and `SYSTEM`.
+- The application executes as a standard user process and never prompts for User Account Control (UAC) elevation.
+
+### 3. Tauri 2 Desktop & Content Security Policy (CSP)
+- The desktop webview enforces a strict Content Security Policy denying remote origins, unsafe inline scripts, and external network navigation.
+- Desktop capabilities (`capabilities/default.json`) are restricted to `core:default` and `windows: ["main"]`. Arbitrary shell execution and unrestricted filesystem access plugins are disabled.
+- Frontend input parameters (search strings, notes, rule IDs, limits, offsets) are independently validated in the Rust backend before querying storage.
+
+### 4. Memory Safety & Unsafe Containment
+- Unsafe Rust code is forbidden across `sentinel-core`, `sentinel-detection`, and `sentinel-app`.
+- Unsafe code is strictly quarantined to Windows C-FFI calls in `sentinel-collector::windows_tcp`. Every unsafe block is validated with an explicit `// SAFETY:` rationale, unaligned pointer reading (`std::ptr::read_unaligned`), and record count upper bounds (`MAX_SNAPSHOT_RECORDS = 50,000`).
+
+### 5. Sensitive Data Handling & Error Sanitization
+- SentinelX records connection metadata: source/destination IP addresses, ports, protocol, process ID, and TCP state.
+- It **never** captures, logs, or stores packet payload data, HTTP headers, authentication tokens, or keystrokes.
+- Internal database paths, SQL query fragments, and OS connection details are suppressed from frontend error messages and logged exclusively to backend tracing facilities.
+
+### 6. Audit Trail Integrity
+- Analyst triage actions (acknowledging an alert, resolving an alert, rule configuration updates) and retention runs are immutably appended to the `audit_log` table.
+- Audit entries enforce length limits (`MAX_AUDIT_*`), validated JSON structures, and clock skew boundaries.
+
+### 7. Migration Safety
+- Schema migrations are embedded at compile time using `sqlx::migrate!()`.
+- Migrations execute within discrete database transactions. If a migration step encounters an error, the transaction rolls back cleanly.
+- The application **never** attempts destructive database resets or silently deletes user databases upon startup failure.
 
 ---
 
 ## Current Security Limitations
 
-1. **No External Security Audit**: SentinelX is an educational systems engineering and defensive architecture portfolio project. It has not undergone an independent third-party cybersecurity audit or formal certification.
-2. **Snapshot Sampling Heuristics**: As documented in `docs/detection-rules.md`, point-in-time TCP snapshot polling resamples long-lived connections. Detections reflect observation volume rather than verified connection initiation handshakes.
-3. **Local Encryption**: SQLite database files are not encrypted at rest by default. Users requiring encryption-at-rest should deploy SentinelX on BitLocker-encrypted NTFS volumes.
-4. **Local Execution Context**: SentinelX operates as a local endpoint process and does not expose unauthenticated network listening sockets.
+1. **Local Same-User Tampering**: SentinelX operates as a standard user-mode process. Any other process running under the identical Windows user security context has OS-level rights to read or modify `%LOCALAPPDATA%\SentinelX\sentinelx.db`. Hardware-backed encryption at rest (e.g., DPAPI-wrapped SQLCipher) is planned for future enterprise releases.
+2. **Snapshot Sampling Heuristics**: Point-in-time TCP snapshot polling resamples long-lived connections. Detections reflect observation volume and state within rolling time windows rather than verified initial SYN handshakes.
+3. **No Packet Payload Inspection**: Telemetry collection via `GetExtendedTcpTable` does not inspect packet contents or decrypt TLS encrypted streams. Detections are based strictly on connection metadata.
+4. **Unsigned Release Candidate Binaries**: Release artifacts for this phase are unsigned. Windows SmartScreen may present an unknown publisher warning upon installation.
 
 ---
 
@@ -67,7 +74,7 @@ Alerts emitted by SentinelX represent evidence-backed hypotheses for human secur
 
 If you identify a security vulnerability, memory safety defect, or invariant bypass in SentinelX:
 
-1. **Responsible Disclosure**: Please submit a private issue or advisory report through the repository hosting interface (e.g., GitHub Security Advisories).
+1. **Responsible Disclosure**: Please report security vulnerabilities privately via the repository hosting security advisory interface (e.g., GitHub Security Advisories).
 2. **Details to Include**:
    - Detailed description of the vulnerability and affected crate/module.
    - Minimal proof-of-concept (PoC) code or synthetic event payload.

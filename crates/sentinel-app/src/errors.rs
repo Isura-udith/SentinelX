@@ -41,13 +41,36 @@ impl From<sentinel_storage::StorageError> for AppError {
                 Self::Validation(format!("Invalid status transition from {from:?} to {to:?}"))
             }
             sentinel_storage::StorageError::Domain(e) => Self::Validation(e.to_string()),
-            other => Self::Storage(other.to_string()),
+            sentinel_storage::StorageError::ConstraintViolation(msg) => Self::Validation(msg),
+            sentinel_storage::StorageError::Database(ref e) => {
+                tracing::error!(error = %e, "Internal database error occurred");
+                Self::Storage(
+                    "A database error occurred. See diagnostic logs for details.".to_string(),
+                )
+            }
+            sentinel_storage::StorageError::Io(ref e) => {
+                tracing::error!(error = %e, "Internal storage I/O error occurred");
+                Self::Storage(
+                    "A storage filesystem I/O error occurred. See diagnostic logs for details."
+                        .to_string(),
+                )
+            }
+            other => {
+                tracing::error!(error = %other, "Storage subsystem error occurred");
+                Self::Storage(
+                    "A storage error occurred. See diagnostic logs for details.".to_string(),
+                )
+            }
         }
     }
 }
 
 impl From<anyhow::Error> for AppError {
     fn from(err: anyhow::Error) -> Self {
-        Self::Internal(err.to_string())
+        tracing::error!(error = %err, "Internal application error occurred");
+        Self::Internal(
+            "An unexpected internal application error occurred. See diagnostic logs for details."
+                .to_string(),
+        )
     }
 }

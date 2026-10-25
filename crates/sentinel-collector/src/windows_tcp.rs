@@ -33,6 +33,8 @@ use windows_sys::Win32::Networking::WinSock::{AF_INET, AF_INET6};
 
 /// Maximum retry attempts when native table size expands during collection sampling.
 const MAX_BUFFER_RETRIES: usize = 3;
+/// Maximum number of records accepted from native TCP table snapshot to prevent memory exhaustion.
+pub const MAX_SNAPSHOT_RECORDS: usize = 50_000;
 
 /// Native Windows TCP connection table snapshot collector.
 #[derive(Debug)]
@@ -89,6 +91,7 @@ impl WindowsTcpCollector {
 
     /// Helper for IPv4 `GetExtendedTcpTable` query.
     #[cfg(target_os = "windows")]
+    #[allow(clippy::too_many_lines)]
     fn query_extended_table_ipv4() -> Result<Vec<RawTcpRecord>, CollectorError> {
         let mut buffer_size: u32 = 0;
 
@@ -168,6 +171,11 @@ impl WindowsTcpCollector {
         // We verified buffer.len() >= size_of::<u32>(). read_unaligned prevents alignment faults.
         let num_entries =
             unsafe { std::ptr::read_unaligned(buffer.as_ptr().cast::<u32>()) } as usize;
+        if num_entries > MAX_SNAPSHOT_RECORDS {
+            return Err(CollectorError::InvalidTableData(format!(
+                "IPv4 TCP table entries ({num_entries}) exceeds maximum safety bound of {MAX_SNAPSHOT_RECORDS}"
+            )));
+        }
         let row_size = std::mem::size_of::<MIB_TCPROW_OWNER_PID>();
 
         let expected_size = header_size
@@ -219,6 +227,7 @@ impl WindowsTcpCollector {
 
     /// Helper for IPv6 `GetExtendedTcpTable` query.
     #[cfg(target_os = "windows")]
+    #[allow(clippy::too_many_lines)]
     fn query_extended_table_ipv6() -> Result<Vec<RawTcpRecord>, CollectorError> {
         let mut buffer_size: u32 = 0;
 
@@ -296,6 +305,11 @@ impl WindowsTcpCollector {
         // Buffer verified to hold header_size bytes. read_unaligned prevents alignment faults.
         let num_entries =
             unsafe { std::ptr::read_unaligned(buffer.as_ptr().cast::<u32>()) } as usize;
+        if num_entries > MAX_SNAPSHOT_RECORDS {
+            return Err(CollectorError::InvalidTableData(format!(
+                "IPv6 TCP table entries ({num_entries}) exceeds maximum safety bound of {MAX_SNAPSHOT_RECORDS}"
+            )));
+        }
         let row_size = std::mem::size_of::<MIB_TCP6ROW_OWNER_PID>();
 
         let expected_size = header_size

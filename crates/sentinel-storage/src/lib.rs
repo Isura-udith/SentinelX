@@ -25,7 +25,10 @@ pub use alerts::{
     AlertCorrelationCandidate, AlertQueryFilter, AlertRepository, CorrelationOutcome,
     PersistedAlert,
 };
-pub use audit::{AuditEntry, AuditLogRepository, AuditQueryFilter};
+pub use audit::{
+    AuditEntry, AuditLogRepository, AuditQueryFilter, MAX_AUDIT_ACTION_LEN, MAX_AUDIT_ACTOR_LEN,
+    MAX_AUDIT_DETAILS_BYTES, MAX_AUDIT_TARGET_ID_LEN, MAX_AUDIT_TARGET_TYPE_LEN,
+};
 pub use database::{Database, DatabaseConfig};
 pub use error::StorageError;
 pub use events::{BatchInsertResult, EventQueryFilter, EventRepository, PersistedEvent};

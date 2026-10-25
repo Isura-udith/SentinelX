@@ -71,6 +71,33 @@ impl DatabaseConfig {
         self.run_migrations = run;
         self
     }
+    /// Validates database configuration parameters and path safety.
+    ///
+    /// # Errors
+    /// Returns [`StorageError::InvalidParameter`] if path is empty, contains null bytes,
+    /// or if connection pool limits are invalid.
+    pub fn validate(&self) -> Result<(), StorageError> {
+        if self.database_path.as_os_str().is_empty() {
+            return Err(StorageError::InvalidParameter(
+                "Database path cannot be empty".to_string(),
+            ));
+        }
+
+        let path_str = self.database_path.to_string_lossy();
+        if path_str.contains('\0') {
+            return Err(StorageError::InvalidParameter(
+                "Database path contains invalid null byte".to_string(),
+            ));
+        }
+
+        if self.max_connections == 0 {
+            return Err(StorageError::InvalidParameter(
+                "max_connections must be greater than zero".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 /// Central database abstraction managing the underlying SQLite connection pool,
@@ -85,11 +112,14 @@ impl Database {
     /// turns on foreign key enforcement on every connection, and applies migrations.
     ///
     /// # Errors
-    /// Returns [`StorageError::Io`] if directory creation fails, [`StorageError::Database`]
+    /// Returns [`StorageError::InvalidParameter`] if config validation fails,
+    /// [`StorageError::Io`] if directory creation fails, [`StorageError::Database`]
     /// if connection establishment fails, or [`StorageError::Migration`] if schema
     /// migrations fail.
     #[instrument(skip(config), fields(db_path = %config.database_path.display()))]
     pub async fn new(config: &DatabaseConfig) -> Result<Self, StorageError> {
+        config.validate()?;
+
         if config.create_if_missing
             && let Some(parent) = config.database_path.parent()
             && !parent.as_os_str().is_empty()
@@ -97,6 +127,12 @@ impl Database {
         {
             info!(dir = %parent.display(), "Creating database parent directory");
             std::fs::create_dir_all(parent)?;
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+            }
         }
 
         let connect_opts = SqliteConnectOptions::new()

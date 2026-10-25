@@ -203,29 +203,35 @@ async fn run_cli(cli_cfg: CliConfig) -> Result<()> {
     let mut accumulated_alerts = Vec::new();
 
     loop {
-        cycle += 1;
-        info!(cycle, "--- Starting telemetry & persistence cycle ---");
-
-        match coordinator.process_cycle().await {
-            Ok(mut alerts) => {
-                accumulated_alerts.append(&mut alerts);
-            }
-            Err(err) => {
-                tracing::error!(error = %err, cycle, "Cycle processing encountered error");
-            }
-        }
-
-        if let Some(max) = cli_cfg.max_cycles {
-            if cycle >= max {
-                info!(
-                    cycle,
-                    "Reached configured maximum collection cycles; exiting"
-                );
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                info!("Ctrl+C interrupt received; initiating graceful shutdown");
                 break;
             }
-        }
+            _ = interval_timer.tick() => {
+                cycle += 1;
+                info!(cycle, "--- Starting telemetry & persistence cycle ---");
 
-        interval_timer.tick().await;
+                match coordinator.process_cycle().await {
+                    Ok(mut alerts) => {
+                        accumulated_alerts.append(&mut alerts);
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, cycle, "Cycle processing encountered error");
+                    }
+                }
+
+                if let Some(max) = cli_cfg.max_cycles {
+                    if cycle >= max {
+                        info!(
+                            cycle,
+                            "Reached configured maximum collection cycles; exiting"
+                        );
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     if cli_cfg.run_retention {
@@ -318,6 +324,7 @@ fn main() -> ExitCode {
     };
 
     let state_for_setup = Arc::clone(&app_state);
+    let state_for_window = Arc::clone(&app_state);
 
     let result = tauri::Builder::default()
         .manage(app_state)
@@ -327,6 +334,15 @@ fn main() -> ExitCode {
                 state_for_setup.set_app_handle(handle).await;
             });
             Ok(())
+        })
+        .on_window_event(move |_window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed = event
+            {
+                state_for_window
+                    .shutdown_flag
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                info!("Window close requested; signaled graceful background shutdown");
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_system_status,
