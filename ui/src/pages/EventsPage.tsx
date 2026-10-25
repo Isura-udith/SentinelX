@@ -63,7 +63,10 @@ export const EventsPage: React.FC = () => {
         params.destination_port = p;
       }
     }
-    if (telemetrySource) params.telemetry_source = telemetrySource;
+    if (telemetrySource) {
+      params.telemetry_source = telemetrySource;
+      params.source = telemetrySource;
+    }
 
     try {
       const res = await tauriCommands.queryNetworkEvents(params);
@@ -94,7 +97,10 @@ export const EventsPage: React.FC = () => {
         params.destination_port = p;
       }
     }
-    if (telemetrySource) params.telemetry_source = telemetrySource;
+    if (telemetrySource) {
+      params.telemetry_source = telemetrySource;
+      params.source = telemetrySource;
+    }
 
     tauriCommands.queryNetworkEvents(params).then(
       (res) => {
@@ -325,10 +331,10 @@ export const EventsPage: React.FC = () => {
                       {evt.protocol}
                     </td>
                     <td className="px-4 py-2.5 text-slate-200">
-                      {evt.source_ip}:{evt.source_port}
+                      {evt.source_ip || '-'}:{evt.source_port != null ? evt.source_port : '-'}
                     </td>
                     <td className="px-4 py-2.5 text-slate-200 font-semibold">
-                      {evt.destination_ip}:{evt.destination_port}
+                      {evt.destination_ip || '-'}:{evt.destination_port != null ? evt.destination_port : '-'}
                     </td>
                     <td className="px-4 py-2.5 text-slate-400">
                       {evt.process_id != null ? (

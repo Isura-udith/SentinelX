@@ -2,8 +2,36 @@ import React from 'react';
 import type { AlertSeverity, AlertStatus } from '../../types';
 import { AlertCircle, AlertTriangle, Info, CheckCircle2, ShieldAlert } from 'lucide-react';
 
+const normalizeSeverity = (sev: string): AlertSeverity => {
+  const lower = (sev || '').toLowerCase();
+  switch (lower) {
+    case 'critical':
+      return 'Critical';
+    case 'high':
+      return 'High';
+    case 'medium':
+      return 'Medium';
+    case 'low':
+      return 'Low';
+    default:
+      return 'Informational';
+  }
+};
+
+const normalizeStatus = (st: string): AlertStatus => {
+  const lower = (st || '').toLowerCase();
+  switch (lower) {
+    case 'acknowledged':
+      return 'Acknowledged';
+    case 'resolved':
+      return 'Resolved';
+    default:
+      return 'Open';
+  }
+};
+
 interface SeverityBadgeProps {
-  severity: AlertSeverity;
+  severity: AlertSeverity | string;
   size?: 'sm' | 'md';
 }
 
@@ -41,23 +69,24 @@ export const SeverityBadge: React.FC<SeverityBadgeProps> = ({ severity, size = '
     },
   };
 
-  const current = styles[severity] || styles.Informational;
+  const normalized = normalizeSeverity(severity);
+  const current = styles[normalized] || styles.Informational;
   const padding = size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-1 text-xs';
 
   return (
     <span
       className={`inline-flex items-center gap-1.5 font-medium rounded-full border ${current.bg} ${current.text} ${current.border} ${padding}`}
       role="status"
-      aria-label={`Severity: ${severity}`}
+      aria-label={`Severity: ${normalized}`}
     >
       {current.icon}
-      <span>{severity}</span>
+      <span>{normalized}</span>
     </span>
   );
 };
 
 interface StatusBadgeProps {
-  status: AlertStatus;
+  status: AlertStatus | string;
 }
 
 export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
@@ -82,16 +111,17 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
     },
   };
 
-  const current = styles[status] || styles.Open;
+  const normalized = normalizeStatus(status);
+  const current = styles[normalized] || styles.Open;
 
   return (
     <span
       className={`inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-medium rounded-full border ${current.bg} ${current.text} ${current.border}`}
       role="status"
-      aria-label={`Status: ${status}`}
+      aria-label={`Status: ${normalized}`}
     >
       {current.icon}
-      <span>{status}</span>
+      <span>{normalized}</span>
     </span>
   );
 };

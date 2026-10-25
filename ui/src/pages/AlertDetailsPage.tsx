@@ -144,7 +144,7 @@ export const AlertDetailsPage: React.FC<AlertDetailsPageProps> = ({
         </Button>
 
         <div className="flex items-center gap-2">
-          {details.status === 'Open' && (
+          {details.status?.toLowerCase() === 'open' && (
             <Button
               size="sm"
               variant="secondary"
@@ -155,7 +155,7 @@ export const AlertDetailsPage: React.FC<AlertDetailsPageProps> = ({
             </Button>
           )}
 
-          {details.status !== 'Resolved' && (
+          {details.status?.toLowerCase() !== 'resolved' && (
             <Button
               size="sm"
               variant="primary"
@@ -225,7 +225,7 @@ export const AlertDetailsPage: React.FC<AlertDetailsPageProps> = ({
               </span>
               <span className="text-slate-200 font-medium">
                 <span className="font-bold text-slate-100 font-mono">{details.event_count}</span> total observations
-                ({details.evidence_event_ids.length} linked IDs)
+                ({details.evidence_event_ids?.length ?? 0} linked IDs)
               </span>
             </div>
           </div>
@@ -237,7 +237,7 @@ export const AlertDetailsPage: React.FC<AlertDetailsPageProps> = ({
                 Audit State
               </span>
               <span className="text-slate-200">
-                {details.associated_audit_history.length} logged state transitions
+                {details.associated_audit_history?.length ?? 0} logged state transitions
               </span>
             </div>
           </div>
@@ -308,13 +308,13 @@ export const AlertDetailsPage: React.FC<AlertDetailsPageProps> = ({
         }
         subtitle="Chronological record of detections, acknowledgements, and analyst actions"
       >
-        {details.associated_audit_history.length === 0 ? (
+        {(details.associated_audit_history?.length ?? 0) === 0 ? (
           <div className="py-6 text-center text-xs text-slate-500">
             No audit records associated with this alert.
           </div>
         ) : (
           <div className="space-y-3 relative before:absolute before:inset-0 before:left-3.5 before:w-0.5 before:bg-slate-800">
-            {details.associated_audit_history.map((entry) => (
+            {details.associated_audit_history?.map((entry) => (
               <div key={entry.id} className="relative flex items-start gap-4 pl-8 text-xs">
                 <div className="absolute left-2.5 top-1.5 w-2.5 h-2.5 rounded-full bg-cyan-500 ring-4 ring-slate-900" />
                 <div className="flex-1 bg-slate-950/60 p-3 rounded-lg border border-slate-800">

@@ -294,7 +294,7 @@ export const AlertsPage: React.FC<AlertsPageProps> = ({ onSelectAlert, onAddToas
                         className="inline-flex items-center gap-1.5"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {alt.status === 'Open' && (
+                        {alt.status?.toLowerCase() === 'open' && (
                           <Button
                             size="sm"
                             variant="secondary"
@@ -305,7 +305,7 @@ export const AlertsPage: React.FC<AlertsPageProps> = ({ onSelectAlert, onAddToas
                           </Button>
                         )}
 
-                        {alt.status !== 'Resolved' && (
+                        {alt.status?.toLowerCase() !== 'resolved' && (
                           <Button
                             size="sm"
                             variant="secondary"

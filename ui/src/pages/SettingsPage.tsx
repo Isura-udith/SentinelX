@@ -41,7 +41,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [eventRetention, setEventRetention] = useState<number>(30);
   const [auditRetention, setAuditRetention] = useState<number>(90);
   const [pollingInterval, setPollingInterval] = useState<number>(1000);
-  const [logVerbosity, setLogVerbosity] = useState<string>('INFO');
+  const [logVerbosity, setLogVerbosity] = useState<string>('info');
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
 
   const fetchSettings = useCallback(async () => {
@@ -264,14 +264,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               <div>
                 <label className="text-slate-200 font-semibold block mb-1">Log Verbosity</label>
                 <select
-                  value={logVerbosity}
-                  onChange={(e) => setLogVerbosity(e.target.value)}
+                  value={logVerbosity.toLowerCase()}
+                  onChange={(e) => setLogVerbosity(e.target.value.toLowerCase())}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                 >
-                  <option value="DEBUG">DEBUG (Detailed Diagnostics)</option>
-                  <option value="INFO">INFO (Standard Operations)</option>
-                  <option value="WARN">WARN (Warnings & Errors Only)</option>
-                  <option value="ERROR">ERROR (Fatal Errors Only)</option>
+                  <option value="debug">DEBUG (Detailed Diagnostics)</option>
+                  <option value="info">INFO (Standard Operations)</option>
+                  <option value="warn">WARN (Warnings & Errors Only)</option>
+                  <option value="error">ERROR (Fatal Errors Only)</option>
                 </select>
               </div>
             </div>

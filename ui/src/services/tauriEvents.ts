@@ -6,10 +6,10 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { isTauriEnvironment } from './tauriCommands';
 
 export const BACKEND_EVENTS = {
-  NEW_EVENT: 'sentinel://new-event',
-  NEW_ALERT: 'sentinel://new-alert',
-  ALERT_STATUS_CHANGED: 'sentinel://alert-status-changed',
-  COLLECTOR_STATE_CHANGED: 'sentinel://collector-state-changed',
+  NEW_EVENT: 'telemetry-cycle',
+  NEW_ALERT: 'alert-detected',
+  ALERT_STATUS_CHANGED: 'alert-status-changed',
+  COLLECTOR_STATE_CHANGED: 'collector-state-changed',
 } as const;
 
 export async function subscribeToBackendEvent<T>(

@@ -392,7 +392,18 @@ impl AppState {
                                     let alert_payload = AlertDetectedPayload {
                                         alert_id: alert.id.to_string(),
                                         rule_id: alert.rule_id.to_string(),
-                                        severity: alert.severity.to_string().to_lowercase(),
+                                        severity: match alert.severity {
+                                            sentinel_core::alert::AlertSeverity::Informational => {
+                                                "Informational"
+                                            }
+                                            sentinel_core::alert::AlertSeverity::Low => "Low",
+                                            sentinel_core::alert::AlertSeverity::Medium => "Medium",
+                                            sentinel_core::alert::AlertSeverity::High => "High",
+                                            sentinel_core::alert::AlertSeverity::Critical => {
+                                                "Critical"
+                                            }
+                                        }
+                                        .to_string(),
                                         title: alert.title,
                                         timestamp: alert.first_observed_at,
                                     };

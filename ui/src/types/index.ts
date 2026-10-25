@@ -147,6 +147,7 @@ export interface EventQueryParams {
   destination_ip?: string;
   destination_port?: number;
   protocol?: string;
+  source?: string;
   telemetry_source?: string;
   search_text?: string;
   start_time?: string;

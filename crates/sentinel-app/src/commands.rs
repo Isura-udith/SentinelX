@@ -9,7 +9,7 @@ use crate::state::{AppSettings, AppState};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use sentinel_collector::mock::{MockCollector, MockScenario};
 use sentinel_collector::windows_tcp::WindowsTcpCollector;
-use sentinel_core::alert::{AlertId, AlertSeverity};
+use sentinel_core::alert::{AlertId, AlertSeverity, AlertStatus};
 use sentinel_core::event::{EventId, NetworkProtocol, TelemetrySource};
 use sentinel_storage::alerts::{str_to_severity, str_to_status};
 use sentinel_storage::{
@@ -168,14 +168,26 @@ impl From<&PersistedAlert> for AlertDto {
             id: pa.id.to_string(),
             rule_id: pa.rule_id.to_string(),
             rule_version: pa.rule_version.clone(),
-            severity: pa.severity.to_string().to_lowercase(),
+            severity: match pa.severity {
+                AlertSeverity::Informational => "Informational",
+                AlertSeverity::Low => "Low",
+                AlertSeverity::Medium => "Medium",
+                AlertSeverity::High => "High",
+                AlertSeverity::Critical => "Critical",
+            }
+            .to_string(),
             title: pa.title.clone(),
             description: pa.description.clone(),
             first_seen: pa.first_seen,
             last_seen: pa.last_seen,
             created_at: pa.created_at,
             updated_at: pa.updated_at,
-            status: pa.status.to_string().to_lowercase(),
+            status: match pa.status {
+                AlertStatus::Open => "Open",
+                AlertStatus::Acknowledged => "Acknowledged",
+                AlertStatus::Resolved => "Resolved",
+            }
+            .to_string(),
             event_count: pa.event_count,
             fingerprint: pa.fingerprint.clone(),
             evidence_count: pa.evidence_event_ids.len(),
@@ -292,6 +304,7 @@ pub struct EventQueryParams {
     pub destination_ip: Option<String>,
     pub destination_port: Option<u16>,
     pub protocol: Option<String>,
+    #[serde(alias = "telemetry_source")]
     pub source: Option<String>,
     pub search_text: Option<String>,
     pub start_time: Option<DateTime<Utc>>,
@@ -897,7 +910,7 @@ pub async fn acknowledge_alert_impl(
             EVENT_ALERT_STATUS_CHANGED,
             AlertStatusChangedPayload {
                 alert_id: aid.to_string(),
-                new_status: "acknowledged".to_string(),
+                new_status: "Acknowledged".to_string(),
                 updated_at: Utc::now(),
             },
         );
@@ -944,7 +957,7 @@ pub async fn resolve_alert_impl(
             EVENT_ALERT_STATUS_CHANGED,
             AlertStatusChangedPayload {
                 alert_id: aid.to_string(),
-                new_status: "resolved".to_string(),
+                new_status: "Resolved".to_string(),
                 updated_at: Utc::now(),
             },
         );
