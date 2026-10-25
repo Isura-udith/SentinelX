@@ -3074,7 +3074,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-app"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3096,7 +3096,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-collector"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "proptest",
@@ -3111,7 +3111,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-core"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "proptest",
@@ -3123,7 +3123,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-detection"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "proptest",
@@ -3136,7 +3136,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-storage"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "proptest",

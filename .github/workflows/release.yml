@@ -1,0 +1,97 @@
+name: SentinelX Automated Release Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version (e.g., 1.0.0 or 1.0.0-rc.1)'
+        required: true
+        default: '1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-release:
+    name: Build & Publish Release Assets (Windows 11 x64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Stable Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: x86_64-pc-windows-msvc
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Verify Code Quality & Static Checks
+        shell: pwsh
+        run: |
+          Write-Host "Running Rust formatting check..."
+          cargo fmt --all -- --check
+          Write-Host "Running Rust clippy analysis..."
+          cargo clippy --workspace --all-targets -- -D warnings
+          Write-Host "Running Frontend typecheck & lint..."
+          npm --prefix ui run typecheck
+          npm --prefix ui run lint
+          Write-Host "Running Frontend tests..."
+          npm --prefix ui run test
+          Write-Host "Running Rust workspace tests..."
+          cargo test --workspace
+
+      - name: Build Tauri Desktop NSIS Installer
+        run: npx --prefix ui tauri build --bundles nsis
+
+      - name: Generate Checksums & Software Bill of Materials (SBOM)
+        shell: pwsh
+        run: |
+          $bundleDir = "target/release/bundle/nsis"
+          $installer = Get-ChildItem -Path $bundleDir -Filter "SentinelX_*_x64-setup.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $installer) { throw "Release installer was not found in $bundleDir" }
+
+          $binary = Get-Item "target/release/sentinel-app.exe"
+          $installerHash = Get-FileHash -Path $installer.FullName -Algorithm SHA256
+          $binaryHash = Get-FileHash -Path $binary.FullName -Algorithm SHA256
+
+          $checksumContent = @"
+          $($installerHash.Hash)  $($installer.Name)
+          $($binaryHash.Hash)  $($binary.Name)
+          "@.Trim()
+
+          $checksumPath = "$bundleDir/SHA256SUMS.txt"
+          $checksumContent | Out-File -FilePath $checksumPath -Encoding utf8
+          Write-Host "Generated release checksums:`n$checksumContent"
+
+          # Prepare release staging directory
+          New-Item -ItemType Directory -Path "release_artifacts" -Force | Out-Null
+          Copy-Item $installer.FullName -Destination "release_artifacts/"
+          Copy-Item $binary.FullName -Destination "release_artifacts/"
+          Copy-Item $checksumPath -Destination "release_artifacts/"
+          Copy-Item "docs/release/SBOM.json" -Destination "release_artifacts/" -ErrorAction SilentlyContinue
+
+      - name: Create GitHub Release & Attach Artifacts
+        uses: softprops/action-gh-release@c95fe1489396fe8a9ec87454c60a45ab76c22e7f # v2.2.1
+        with:
+          files: release_artifacts/*
+          draft: false
+          prerelease: false
+          body_path: docs/release/RELEASE_NOTES.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

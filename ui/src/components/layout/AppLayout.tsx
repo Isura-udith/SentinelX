@@ -38,7 +38,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         currentPage={currentPage}
         onNavigate={onNavigate}
         isDemoMode={status?.is_demo_mode ?? false}
-        appVersion={status?.app_version ?? '0.2.0'}
+        appVersion={status?.app_version ?? '1.0.0'}
       />
 
       {/* Main Content Area */}

@@ -14,3 +14,27 @@ Thumbs.db
 .idea/
 *.sublime-project
 *.sublime-workspace
+
+# Databases and Local Storage
+*.db
+*.db-wal
+*.db-shm
+data/
+*.sqlite
+
+# Application and Diagnostic Logs
+*.log
+
+# Release Staging & Distribution
+release_artifacts/
+
+# Secrets and Local Environment
+.env
+*.env
+*.env.local
+
+# Frontend Node & Dist
+ui/dist/
+ui/node_modules/
+ui/src-tauri/
+

@@ -1,383 +1,257 @@
-# SentinelX
+# SentinelX: Defensive Threat Detection & Monitoring Platform for Windows 11
 
-[![Rust](https://img.shields.io/badge/rust-stable-brightgreen.svg)](https://www.rust-lang.org/)
+[![Release](https://img.shields.io/badge/release-v1.0.0--rc1-blue.svg)](https://github.com/sentinelx/sentinelx/releases)
+[![Rust](https://img.shields.io/badge/rust-2024%20edition-brightgreen.svg)](https://www.rust-lang.org/)
+[![Platform](https://img.shields.io/badge/platform-Windows%2011%20x64-blue.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Platform](https://img.shields.io/badge/platform-Windows%2011-blue.svg)]()
+[![Tauri](https://img.shields.io/badge/Tauri-v2.12-24C8DB.svg)](https://tauri.app/)
+[![React](https://img.shields.io/badge/React-v19.3-61DAFB.svg)](https://react.dev/)
 
-SentinelX is a modular, high-performance Rust defensive cybersecurity monitoring platform designed to collect local network connection telemetry, analyze connection behaviors, detect suspicious activities, persist forensic evidence, and generate explainable, evidence-backed security alerts.
+SentinelX is an educational, local-first defensive cybersecurity monitoring desktop application built specifically for Windows 11. It continuously samples host network state via read-only Windows IP Helper APIs, normalizes raw telemetry into structured events, detects suspicious connection patterns (such as port sweeps and connection bursts) via stateful in-memory sliding windows, and provides persistent storage and a reactive desktop SOC dashboard.
 
-Built as an advanced systems engineering and security architecture portfolio project, SentinelX demonstrates strict memory safety, zero-panic defensive coding, safe native Windows API integration, deterministic analytical engines, transactional SQLite persistence, stateful event-time rolling-window detection, alert correlation, property-based verification, and enterprise-grade modular design.
-
-> **Operational Notice (Phase 5 Release Candidate)**:
-> SentinelX is a hardened defensive cybersecurity monitoring platform for Windows 11.
-> It collects **point-in-time TCP connection table snapshots** via native Windows IP Helper APIs (`GetExtendedTcpTable`) in **read-only mode**.
-> It operates with **standard user permissions** (no administrator rights or UAC elevation needed), requires **no kernel or packet capture drivers**, and **neither modifies nor terminates network sockets**.
-> Connection records and security alerts are durably persisted to a local **SQLite database** in Write-Ahead Logging (WAL) mode with embedded migrations and foreign-key integrity. A desktop interface is provided via **Tauri 2**, React 19, and Tailwind CSS.
+> **Operational & Scope Notice:**  
+> SentinelX is an educational defensive security monitoring project. Its network telemetry operates via periodic (default: 1,000 ms) read-only Windows TCP connection snapshots using `GetExtendedTcpTable`. It operates with **standard user permissions** (no administrator rights or UAC elevation needed), requires **no kernel or packet capture drivers**, and **neither modifies nor terminates network sockets**.
+> 
+> It does not provide complete packet inspection or comprehensive endpoint detection, and it may miss short-lived connections and activity outside its supported collection scope.
 
 ---
 
 ## Table of Contents
 
-- [Phase 3 Capabilities](#phase-3-capabilities)
-- [Core Principles](#core-principles)
-- [Architecture Overview](#architecture-overview)
-- [Crate Structure](#crate-structure)
-- [Technology Stack](#technology-stack)
-- [Prerequisites](#prerequisites)
-- [Quick Start & CLI Usage](#quick-start--cli-usage)
-- [Database Schema & Persistence](#database-schema--persistence)
-- [Detection Rules](#detection-rules)
-- [Alert Correlation & Retention](#alert-correlation--retention)
-- [Running Tests](#running-tests)
-- [Example Output](#example-output)
-- [Documentation Index](#documentation-index)
-- [Known Limitations](#known-limitations)
-- [Roadmap & Future Milestones](#roadmap--future-milestones)
-- [Security & Scope](#security--scope)
-- [License](#license)
+1. [Problem Statement & Goals](#problem-statement--goals)
+2. [Key Implemented Features](#key-implemented-features)
+3. [Architecture Overview](#architecture-overview)
+4. [Technology Stack](#technology-stack)
+5. [System Requirements](#system-requirements)
+6. [Installation & Windows Packaging](#installation--windows-packaging)
+7. [Developer Setup & Build Instructions](#developer-setup--build-instructions)
+8. [Usage & Operator Workflow](#usage--operator-workflow)
+9. [Security, Privacy & Threat Design](#security-privacy--threat-design)
+10. [Testing & Quality Assurance](#testing--quality-assurance)
+11. [Project Structure](#project-structure)
+12. [Known Limitations](#known-limitations)
+13. [Roadmap](#roadmap)
+14. [Documentation Index](#documentation-index)
+15. [License & Notices](#license--notices)
 
 ---
 
-## Phase 3 Capabilities
+## 1. Problem Statement & Goals
 
-- **SQLite Persistence (`sentinel-storage`)**: Embedded version-controlled migrations (`0001_initial_schema.sql`, `0002_detection_indexes.sql`) utilizing SQLx with full foreign-key enforcement, 5-second busy timeout, and Write-Ahead Logging (WAL) mode.
-- **Transactional Batched Ingestion**: Normalized telemetry is persisted in discrete, atomic database transactions with idempotent `EventId` collision handling (`INSERT OR IGNORE`).
-- **Forensic Evidence Linking**: Connects security alerts to underlying evidence events through a dedicated `alert_events` mapping table.
-- **Stateful Event-Time Rolling Windows**: Detection engine tracks observations across configurable sliding time windows using event observation timestamps (`observed_at`) rather than ingestion time, with duplicate `EventId` suppression and watermark-based window eviction.
-- **Upgraded `NET-001` (Port Scan Detection)**: Distinct destination port counting within an event-time rolling window with bounded host tracking and cooldown suppression.
-- **New `NET-002` (Connection Volume Anomaly)**: Connection burst heuristic identifying abnormal volume spikes from a single source within a sliding window.
-- **Alert Fingerprinting & Correlation**: Merges repeated alerts for active incidents (`NET-001:{source_ip}`, `NET-002:{source_ip}`), advancing `last_seen`, incrementing observation counts, and appending new evidence links without creating duplicate alerts.
-- **Audited Status Lifecycle**: Enforces validated status transitions (`Open` → `Acknowledged` → `Resolved`) and logs all triage and administrative actions to an immutable `audit_log` table.
-- **Configurable Data Retention (Strategy A)**: Automated aging of raw events while strictly preserving any event referenced by an active or historical security alert.
+Modern Windows endpoints face continuous threats from unauthorized reconnaissance, lateral movement sweeps, and anomalous connection volume surges. Conventional enterprise EDR solutions often rely on proprietary cloud backends and intrusive kernel drivers, introducing privacy risks, heavy memory footprints, and high complexity.
 
----
-
-## Core Principles
-
-1. **Defensive Non-Interference**: SentinelX alerts represent reasoned hypotheses supported by observable telemetry. The engine **never** unilaterally terminates processes, blocks traffic, or modifies operating system state.
-2. **Deterministic Processing**: Given the same sequence of observations and configuration, SentinelX produces identical alert outputs in stable, predictable order.
-3. **Decoupled Architecture**: Domain models and detection rules are strictly isolated from concrete collectors, storage backends, and UI layers.
-4. **Explicit Failure & Boundary Enforcement**: All configuration parameters, timestamps, port ranges, and metadata containers enforce checked arithmetic and strict bounded limits. Unbounded allocations and production panics (`unwrap()` / `expect()`) are forbidden.
-5. **Relational Integrity**: Foreign-key enforcement is enabled across all connections. Supporting evidence records cannot be orphaned or deleted while linked to security alerts.
+### Core Goals & Design Principles
+1. **Defensive Non-Interference:** SentinelX is strictly passive. It observes and reasons over telemetry without dropping packets, modifying network routing, or terminating user processes.
+2. **Local-First & Zero Cloud:** 100% of telemetry, detection rules, alerts, and audit trails remain on the local disk. No external network traffic is generated.
+3. **Privilege Minimization:** Operates entirely within an unprivileged Windows user context (Medium Integrity). No kernel drivers (`.sys`), no Windows services, and no UAC prompts.
+4. **Deterministic & Bounded Execution:** All sliding windows, evidence collections, and database queries enforce strict memory bounding, checked conversions, and zero-panic runtime paths.
+5. **Relational Integrity:** Foreign keys and Write-Ahead Logging (WAL) protect against corruption and ensure concurrent UI queries never block background batch inserts.
 
 ---
 
-## Architecture Overview
+## 2. Key Implemented Features
 
+- **Windows IP Helper Telemetry Collection:** Periodic read-only TCP table inspection (`GetExtendedTcpTable`) with full Big-Endian decoding for IPv4, IPv6, and ports.
+- **Process Attribution:** Maps every active socket to its owning Windows Process ID (PID).
+- **Rule NET-001 (Port Scan Detection):** Tracks distinct destination ports targeted per source IP within a sliding 60-second window (default threshold: 10 ports) with alert cooldown suppression.
+- **Rule NET-002 (Connection Burst Anomaly):** Detects anomalous surges in established connections from a single IP (default threshold: 20 connections in 60s).
+- **SQLite Persistence & Embedded Migrations:** Version-controlled schema migrations (`0001` through `0003`) compiled directly into the binary with foreign-key enforcement and WAL mode.
+- **Evidence-Preserving Retention:** Prunes historical events older than 30 days while permanently preserving any event referenced as evidence for an active security alert.
+- **Immutable Audit Logging:** Full non-repudiation audit trail for alert acknowledgments, resolutions, and rule updates.
+- **Tauri 2 Reactive Desktop Dashboard:** Overview SOC KPIs, interactive time-series timeline charts, event and alert tables, alert deep-dive inspection, and settings controls.
+- **Windows NSIS Installer:** Native standalone installer package configured for per-user installation.
+
+---
+
+## 3. Architecture Overview
+
+SentinelX is organized as a modular Cargo virtual workspace with strictly decoupled crates:
+
+```mermaid
+graph TD
+    subgraph WindowsHost ["Windows 11 Operating System"]
+        WinAPI["Windows IP Helper (GetExtendedTcpTable)"]
+    end
+
+    subgraph NativeCore ["SentinelX Rust Core (Edition 2024)"]
+        Collector["sentinel-collector<br/>• Raw TCP Snapshots<br/>• Big-Endian Decoding"]
+        Engine["sentinel-detection<br/>• Sliding-Window Aggregator<br/>• Rules NET-001 & NET-002"]
+        Storage["sentinel-storage<br/>• SQLite Connection Pool (WAL)<br/>• Embedded Migrations<br/>• Evidence-Preserving Retention"]
+        App["sentinel-app<br/>• Tokio Coordinator<br/>• Tauri IPC Command Bridge"]
+    end
+
+    subgraph DesktopGUI ["Tauri 2 Frontend (WebView2)"]
+        ReactUI["React 19 + TypeScript + Tailwind CSS<br/>• Overview SOC Dashboard<br/>• Events & Alert Investigation<br/>• Detection Rules & Settings"]
+    end
+
+    WinAPI -->|Read-Only FFI| Collector
+    Collector -->|Normalized Events| Engine
+    Collector -->|Batch Insert| Storage
+    Engine -->|Triggered Alerts & Evidence| Storage
+    App --> Collector
+    App --> Engine
+    App --> Storage
+    App <-->|Strongly-Typed IPC| DesktopGUI
 ```
-                                 [ sentinel-app ]
-                                   │    │    │
-          ┌────────────────────────┘    │    └────────────────────────┐
-          ▼                             ▼                             ▼
- [ sentinel-collector ]       [ sentinel-detection ]       [ sentinel-storage ]
-          │                             │                             │
-          └─────────────────────────────┼─────────────────────────────┘
-                                        ▼
-                                [ sentinel-core ]
-```
+
+### Crate Taxonomy
+- **`sentinel-core`**: Canonical domain types (`NetworkEvent`, `SecurityAlert`, `ProcessId`, `AlertSeverity`).
+- **`sentinel-collector`**: Native Windows API collection and deterministic mock simulator.
+- **`sentinel-detection`**: Analytical sliding-window detection engine and rule implementations.
+- **`sentinel-storage`**: SQLite persistence, transactional batch writes, and retention manager.
+- **`sentinel-app`**: Tauri 2 application commands, background scheduler, and state orchestration.
+- **`ui`**: React 19 frontend application.
 
 ---
 
-## Crate Structure
+## 4. Technology Stack
 
-SentinelX is organized as a Cargo virtual workspace containing five decoupled crates:
-
-| Crate | Directory | Purpose |
-| :--- | :--- | :--- |
-| **`sentinel-core`** | `crates/sentinel-core` | Pure domain kernel (`#![forbid(unsafe_code)]`): models (`NetworkEvent`, `SecurityAlert`, `ProcessId`), identifiers, configuration, and domain errors. |
-| **`sentinel-collector`** | `crates/sentinel-collector` | Telemetry subsystem: native Windows TCP snapshot collector (`GetExtendedTcpTable`), deterministic `MockCollector`, normalization, and statistics. |
-| **`sentinel-detection`** | `crates/sentinel-detection` | Analytical detection engine (`#![forbid(unsafe_code)]`), stateful rolling-window tracking, `NET-001` port scan, and `NET-002` connection burst rules. |
-| **`sentinel-storage`** | `crates/sentinel-storage` | SQLite persistence layer (`#![forbid(unsafe_code)]`): embedded SQLx migrations, WAL mode, transactional batch event insertion, alert correlation, and retention. |
-| **`sentinel-app`** | `crates/sentinel-app` | Tokio asynchronous scheduler, command-line orchestration, pipeline coordinator, CLI options, and formatted summary reporting. |
+- **Core Backend:** Rust (2024 Edition, Rust 1.85+)
+- **Asynchronous Runtime:** `tokio` (multi-threaded, timers, signals)
+- **Desktop Framework:** Tauri 2 (`@tauri-apps/api 2.12.4`, `tauri 2.12.5`)
+- **Frontend Stack:** React 19, TypeScript 5.8, Vite 8, Tailwind CSS 4, Lucide Icons, Recharts
+- **Database & Persistence:** SQLite 3 via `sqlx` (WAL journal mode, embedded migrations)
+- **Windows API:** `windows-sys` (`Win32_NetworkManagement_IpHelper`, `Win32_Networking_WinSock`)
+- **Testing:** `proptest` (property testing), Vitest, `tempfile`
 
 ---
 
-## Technology Stack
+## 5. System Requirements
 
-- **Language**: Rust (Stable channel, Edition 2024)
-- **Asynchronous Runtime**: `tokio` (macros, rt-multi-thread, time, sync, signal)
-- **Database & Persistence**: `sqlx` (SQLite, runtime-tokio, chrono, uuid, migrate, macros)
-- **Windows API**: `windows-sys` (`IpHelper`, `WinSock`, `Foundation`)
-- **Serialization**: `serde`, `serde_json`
-- **Time & Timestamps**: `chrono` (UTC)
-- **Unique Identifiers**: `uuid` (v4 UUIDs)
-- **Error Handling**: `thiserror` (typed domain, collector, & storage errors), `anyhow` (application context)
-- **Logging & Diagnostics**: `tracing`, `tracing-subscriber` (with `RUST_LOG` filtering)
-- **Testing**: Built-in test harness, temporary SQLite databases, and `proptest` for property-based invariant verification
+- **Operating System:** Windows 11 (64-bit, Version 22H2 or newer).
+- **Architecture:** x86_64 (`x86_64-pc-windows-msvc`).
+- **RAM:** Minimum 2 GB (SentinelX idle footprint is ~48 MB).
+- **Disk Space:** 50 MB for application binaries and database.
+- **Permissions:** Standard User account. Administrative elevation is **not** required.
 
 ---
 
-## Prerequisites
+## 6. Installation & Windows Packaging
 
-- [Rust](https://www.rust-lang.org/tools/install) (stable toolchain, 1.85+)
-- **Windows 11** (64-bit) for live native TCP table collection.
-- *Cross-Platform Development*: Linux, macOS, or non-Windows hosts can build and run SentinelX using `--mock` mode and execute all platform-independent test suites.
+### 6.1 Download
+Download the official release installer:
+- **Installer:** `SentinelX_1.0.0_x64-setup.exe`
+- **SHA-256 Checksum:** `63A86984E27B419F28A5AC4EECDA77B59EE189222BB3E186BA541026F2B81BE0`
+
+### 6.2 Running Setup
+1. Double-click `SentinelX_1.0.0_x64-setup.exe`.
+2. On Windows Defender SmartScreen (*"Windows protected your PC"*), click **More info** > **Run anyway**. *(See [SmartScreen Disclosure](docs/user/INSTALLATION_AND_UNINSTALLATION.md#step-2-running-setup)).*
+3. The installer installs the application to `%LOCALAPPDATA%\Programs\SentinelX\` and creates Start Menu shortcuts.
+4. Launch SentinelX from the Start Menu.
 
 ---
 
-## Quick Start & CLI Usage
+## 7. Developer Setup & Build Instructions
 
-### 1. Build the Entire Workspace
+For complete prerequisites and toolchain setup, see [BUILD_WINDOWS.md](docs/development/BUILD_WINDOWS.md).
+
+### Quick Commands
 
 ```powershell
-cargo build --workspace
-```
+# 1. Clone repository
+git clone https://github.com/sentinelx/sentinelx.git
+cd sentinelx
 
-### 2. Launch Native Windows 11 Desktop Dashboard (Tauri 2)
+# 2. Install frontend dependencies from lockfile
+cd ui; npm ci; cd ..
 
-Launches the SentinelX desktop window connecting React/TypeScript to the live backend:
+# 3. Run all tests and release verification pipeline
+.\scripts\verify-release.ps1
 
-```powershell
-cargo run -p sentinel-app
-```
-
-### 3. Run Headless CLI Monitoring Mode
-
-Useful for server deployments, background services, or automated scripting without GUI overhead:
-
-```powershell
-# Run 3 live Windows TCP collection cycles to SQLite:
-cargo run -p sentinel-app -- --cli --max-cycles 3
-
-# Run with deterministic mock telemetry scenario:
-cargo run -p sentinel-app -- --cli --mock --max-cycles 5
-```
-
-### 4. Customizing Database Path, Intervals, and Retention
-
-```powershell
-# Specify a custom database path:
-cargo run -p sentinel-app -- --db ./target/demo.db
-
-# Run 5 collection cycles with 500ms intervals:
-cargo run -p sentinel-app -- --interval-ms 500 --max-cycles 5 --db ./target/demo.db
-
-# Run mock collector with custom retention window (7 days):
-cargo run -p sentinel-app -- --mock --interval-ms 250 --max-cycles 10 --retention-days 7
-
-# Run continuously without automated retention cleanup:
-cargo run -p sentinel-app -- --continuous --no-retention
-```
-
-### 5. Viewing CLI Help
-
-```powershell
-cargo run -p sentinel-app -- --help
+# 4. Or build desktop NSIS installer directly
+npx --prefix ui tauri build --bundles nsis
 ```
 
 ---
 
-## Database Schema & Persistence
+## 8. Usage & Operator Workflow
 
-SentinelX manages a local SQLite database with embedded schema migrations:
-
-- **`events`**: Normalized network connection observations (`id`, `observed_at`, `source`, `protocol`, `source_ip`, `source_port`, `destination_ip`, `destination_port`, `process_id`, `metadata_json`, `ingested_at`).
-- **`alerts`**: Correlated security alerts (`id`, `rule_id`, `rule_version`, `severity`, `title`, `description`, `first_seen`, `last_seen`, `status`, `event_count`, `fingerprint`). A partial unique index enforces that at most one active alert (`status IN ('open', 'acknowledged')`) exists per fingerprint.
-- **`alert_events`**: Relational junction table linking alerts to supporting event IDs with composite primary key and `ON DELETE RESTRICT`.
-- **`audit_log`**: Immutable audit records tracking alert status changes and retention operations.
-- **`detection_rules`**: Seed metadata catalog for analytical rules.
-
-For full schema details, indexes, and queries, see [docs/database-schema.md](docs/database-schema.md).
+1. **Dashboard Overview:** Monitor host telemetry health, real-time traffic charts, and active alerts.
+2. **Network Events:** Inspect active TCP connections, local/remote endpoints, socket states, and PIDs.
+3. **Alert Investigation:** Click any alert to open the deep-dive view and review the exact sequence of correlated evidence connections.
+4. **Triage Lifecycle:** Acknowledge alerts under investigation and Resolve incidents with operational notes.
+5. **Rule Configuration:** Tune distinct port thresholds, window durations, and alert cooldowns via the Detection Rules view.
 
 ---
 
-## Detection Rules
+## 9. Security, Privacy & Threat Design
 
-| Rule ID | Rule Name | Category | Primary Dimensions | Window Semantics |
-| :--- | :--- | :--- | :--- | :--- |
-| **`NET-001`** | Port-Scan-Like Activity Detection | Reconnaissance | Source IP, Distinct Dest Ports | Event-Time Sliding Window |
-| **`NET-002`** | Connection Volume Anomaly Detection | Anomaly / Burst | Source IP, Observation Count | Event-Time Sliding Window |
-
-See [docs/detection-rules.md](docs/detection-rules.md) for detailed detection logic, false-positive baselines, and configuration parameters.
+- **STRIDE Threat Model:** Evaluated against all STRIDE categories (see [THREAT_MODEL.md](docs/architecture/THREAT_MODEL.md)).
+- **Zero Cloud Transmission:** All telemetry and database records remain strictly local to `%LOCALAPPDATA%\SentinelX\`. No outbound network calls exist.
+- **Least Privilege:** Standard user execution; no kernel drivers; Tauri capabilities restricted to `core:default`.
+- **Content Security Policy:** Strict CSP (`script-src 'self'`) blocking inline/remote scripts.
 
 ---
 
-## Alert Correlation & Retention
+## 10. Testing & Quality Assurance
 
-- **Correlation**: Repeated detections for the same source within the active window match the stable fingerprint (`NET-001:{source_ip}`). Rather than emitting redundant alerts, SentinelX advances `last_seen`, increments `event_count`, and appends new supporting event IDs to `alert_events`.
-- **Evidence Preservation (Strategy A)**: Expired events older than the retention threshold are safely pruned, **except** for any event referenced by `alert_events`. Supporting forensic evidence remains queryable indefinitely.
-
-See [docs/retention-policy.md](docs/retention-policy.md) for full retention specifications.
-
----
-
-## Running Tests
-
-SentinelX includes 74 automated unit, property-based, mock integration, storage integration, and live Windows tests:
-
-```powershell
-# Run all workspace tests:
-cargo test --workspace
-
-# Run storage integration tests (SQLite, transactions, retention):
-cargo test --test storage_integration
-
-# Run end-to-end detection pipeline integration test:
-cargo test --test detection_pipeline
-
-# Run mock collector integration test:
-cargo test --test mock_integration
-
-# Run collector property-based tests:
-cargo test -p sentinel-collector --test property_tests
-
-# Run live Windows TCP collection test (queries OS directly):
-cargo test -p sentinel-collector -- windows_tcp::tests::test_native_windows_collection_live --nocapture
-
-# Check code formatting and strict Clippy lints:
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-```
+SentinelX maintains 100% automated test pass rates across all layers:
+- **Rust Unit & Property Tests:** 72 unit and property tests verifying domain models, byte order translation, and detection window invariants.
+- **Integration Tests:** 9 storage integration tests (`storage_integration.rs`) and full pipeline tests (`detection_pipeline.rs`).
+- **Failure Injection:** 6 failure injection tests (`failure_injection.rs`) verifying graceful handling of API errors and corrupt states.
+- **Frontend Tests:** Vitest component tests verifying navigation, triage actions, and views.
+- **Static Analysis:** Clean `cargo fmt`, `cargo clippy -- -D warnings`, and `oxlint`.
 
 ---
 
-## Example Output
-
-### Live Windows 11 Collection & Persistence Run
+## 11. Project Structure
 
 ```text
-================================================================================
-                           SENTINELX DEFENSIVE MONITOR                          
-            Phase 3: Storage, Persistence & Stateful Detection Engine          
-================================================================================
- Operational Notice:
- * Telemetry Mode: LIVE WINDOWS TCP SNAPSHOT (IP Helper API).
- * Persistence: SQLite WAL Mode (Path: target/demo.db)
- * Querying native host TCP table via GetExtendedTcpTable in read-only mode.
- * No administrator privileges required; standard user permissions sufficient.
- * Network sockets are neither modified, redirected, nor terminated.
-================================================================================
-
-2026-10-24T00:15:20.128456Z  INFO Initializing SentinelX storage subsystem database_path="target/demo.db"
-2026-10-24T00:15:20.142512Z  INFO Database migrations applied successfully
-2026-10-24T00:15:20.143210Z  INFO Registering detection rule rule_id=NET-001 rule_name=Port-Scan-Like Activity Detection
-2026-10-24T00:15:20.143320Z  INFO Registering detection rule rule_id=NET-002 rule_name=Connection Volume Anomaly Detection
-2026-10-24T00:15:20.143510Z  INFO Starting telemetry collection and detection pipeline...
-2026-10-24T00:15:20.151240Z  INFO --- Starting telemetry collection cycle --- cycle=1
-2026-10-24T00:15:20.152110Z  INFO windows_tcp_collect: Native Windows TCP table collection completed raw_records=118 normalized_events=79 skipped_records=39 latency=890.4µs
-2026-10-24T00:15:20.155420Z  INFO Batch persisted to SQLite batch_size=79 duration=3.31ms
-2026-10-24T00:15:20.156180Z  INFO Security alert persisted alert_id=3c129e62-97b6-455b-bf9f-2da9bfcb9171 rule=NET-001 fingerprint="NET-001:127.0.0.1" correlated=false
-2026-10-24T00:15:20.157890Z  INFO Pipeline metrics: events_ingested=79 alerts_created=1 alerts_correlated=0 retention_purges=0
-2026-10-24T00:15:20.158120Z  INFO Configured maximum collection cycles completed cycle=1 max=1
-
---------------------------------------------------------------------------------
-                              EXECUTION SUMMARY                                 
---------------------------------------------------------------------------------
-Collection Statistics:
-  Total Cycles Attempted   : 1
-  Successful Cycles        : 1
-  Failed Cycles            : 0
-  Raw Records Observed     : 118
-  Normalized Events        : 79
-  Records Skipped          : 39
-  Security Alerts Emitted  : 1
-  Most Recent Cycle Latency: 890.4µs
---------------------------------------------------------------------------------
-
-Pipeline & Storage Metrics:
-  Events Ingested to DB    : 79
-  Alerts Created           : 1
-  Alerts Correlated        : 0
-  Duplicate Events Ignored : 0
-  Database Errors          : 0
-  Retention Purges         : 0
---------------------------------------------------------------------------------
-
-Generated Security Alerts (1):
-
-[Alert #1]
-  Alert ID           : 3c129e62-97b6-455b-bf9f-2da9bfcb9171
-  Rule ID            : NET-001
-  Severity           : CRITICAL
-  Title              : Port-Scan-Like Activity from 127.0.0.1 (28 distinct destination ports)
-  Source Address     : 127.0.0.1
-  Supporting Events  : 41
-  Evidence IDs Count : 20
-  Triage Status      : OPEN
-  Fingerprint        : NET-001:127.0.0.1
-  Explanation        :
-    Source IP 127.0.0.1 was observed contacting 28 distinct destination ports (threshold: 5) across 41 total connection observations. Sampled target ports: [53167, 53907, 53908, 54109 and 24 more].
-
-================================================================================
- Phase 3 demonstration completed successfully without errors.
-================================================================================
+SentinelX/
+├── Cargo.toml                    # Virtual workspace manifest (v1.0.0)
+├── Cargo.lock                    # Pinned Rust dependencies
+├── rust-toolchain.toml           # Toolchain configuration (stable, 2024)
+├── crates/
+│   ├── sentinel-core/            # Domain models and strong identifiers
+│   ├── sentinel-collector/       # Windows IP Helper FFI and mock collector
+│   ├── sentinel-detection/       # In-memory sliding window detection engine
+│   ├── sentinel-storage/         # SQLite persistence and embedded migrations
+│   └── sentinel-app/             # Tauri 2 commands, scheduler, and desktop entry
+├── ui/                           # React 19 + TypeScript + Tailwind CSS desktop UI
+├── scripts/
+│   └── verify-release.ps1        # Automated release verification pipeline
+└── docs/
+    ├── architecture/             # Architecture, Data Flow, Threat Model, Database
+    ├── development/              # Windows 11 Build & Development Guide
+    ├── release/                  # Readiness, Build Verification, Notes, SBOM
+    ├── security/                 # Dependency Audit & Final Security Review
+    ├── testing/                  # Release Test Plan & Execution Report
+    ├── user/                     # Quick Start, User Guide, Troubleshooting, Privacy
+    └── portfolio/                # Overview, Demo Script, Interview Prep
 ```
 
 ---
 
-## Documentation Index
+## 12. Known Limitations
 
-- [Threat Model](docs/threat-model.md): Comprehensive STRIDE threat analysis, asset boundaries, mitigations, and residual risks.
-- [Security Review Report](docs/security-review.md): Audit findings, unsafe Rust isolation, Tauri capability hardening, and error sanitization.
-- [Release Security](docs/release-security.md): Toolchains, dependency audits, build verification, unsigned installer disclosures, and accepted risks.
-- [Performance & Benchmarks](docs/performance.md): Empirical measurements (17k+ events/sec ingestion, 631k events/sec detection), latency baselines, and resource bounds.
-- [Operations Runbook](docs/operations.md): Application lifecycle, graceful shutdown, SQLite backup, retention execution, and emergency disaster recovery.
-- [Testing Guide](docs/testing.md): Automated verification framework, failure injection tests, property-based invariants, and reproduction commands.
-- [Architecture Overview](docs/architecture.md): Workspace crate decoupling, `sentinel-storage`, `TelemetryCollector` trait, and pipeline coordinator.
-- [Database Schema Specification](docs/database-schema.md): Full documentation of SQLite tables, indexes, constraints, and embedded migrations.
-- [Data Retention Policy](docs/retention-policy.md): Specification of retention windows, evidence preservation guarantees, and batched cleanup.
-- [Detection Rules Guide](docs/detection-rules.md): Specification of `NET-001` and `NET-002`, rolling-window semantics, threshold calculation, and false-positive baselines.
-- [Security Architecture](docs/security.md): Least privilege design, non-invasive guarantees, standard-user permissions, and input bounding.
-- [Security Policy](SECURITY.md): Vulnerability reporting, database security, and SQL injection prevention.
-- [Domain Model Specification](docs/domain-model.md): Detailed schemas for `NetworkEvent`, `SecurityAlert`, `DetectionConfig`, and validation rules.
-- [Telemetry Specification](docs/telemetry.md): In-depth guide to Windows `GetExtendedTcpTable`, byte-order decoding, and TCP state mappings.
+1. **Snapshot Polling Blindspot:** SentinelX samples the Windows TCP table periodically (default: 1,000ms). Transient connections that open and close in <10ms between polling cycles may not be captured.
+2. **Metadata-Only Scope:** Payload content, HTTP headers, TLS session data, and DNS queries are not inspected.
+3. **Defensive Non-Interference:** SentinelX does not block connections or terminate host processes.
+4. **Code Signing:** Binary is distributed unsigned; Windows SmartScreen will display an "Unknown Publisher" dialog on initial launch.
 
 ---
 
-## Known Limitations
+## 13. Roadmap
 
-1. **Snapshot Sampling Heuristics**: Connections established and closed between polling intervals are not captured. `NET-002` operates as an observation volume heuristic because snapshot polling inherently resamples long-lived established connections.
-2. **TCP-Only Telemetry**: UDP endpoints and ICMP messages are not captured by `GetExtendedTcpTable`.
-3. **No Packet Payload Capture**: Telemetry contains connection metadata only (IP, port, PID, TCP state). Payload bytes and packet headers are not collected.
-4. **Localhost IPC Signals**: Legitimate developer tools and microservices communicating over loopback (`127.0.0.1`) can trigger port sweep alerts if the threshold is configured below baseline usage.
-5. **In-Memory Rolling Window Reset**: Detection rolling-window state is maintained in-memory for zero-latency evaluation and resets on application restart; historical alerts and evidence remain durable in SQLite.
-6. **Local Same-User Tampering**: In an unmanaged desktop environment, another process operating under the same Windows user session has OS permissions to access `%LOCALAPPDATA%\SentinelX\sentinelx.db`.
+- **v1.1:** Event Tracing for Windows (ETW) provider integration to capture transient sub-polling connections.
+- **v1.2:** Process executable resolution (mapping PIDs to full executable paths and file hashes).
+- **v1.3:** Built-in one-click database export/backup directly in the desktop UI.
 
 ---
 
-## Roadmap & Milestone Status
+## 14. Documentation Index
 
-- **Phase 1 (Foundation & Domain Model)**: *Completed*
-  - Workspace structure, core domain types, detection engine, `NET-001` rule, property-based testing.
-- **Phase 2 (Windows Telemetry)**: *Completed*
-  - Native Windows IP Helper TCP snapshot collector (`GetExtendedTcpTable`).
-  - Alignment-safe memory reads and endianness decoding.
-  - Deterministic `MockCollector` and sequence rotation.
-  - Tokio asynchronous scheduler with graceful shutdown and statistics tracking.
-- **Phase 3 (Storage & Stateful Detection)**: *Completed*
-  - SQLite persistence with SQLx and embedded schema migrations.
-  - Transactional batched event insertion with idempotent deduplication.
-  - Stateful event-time rolling-window analysis (`NET-001`, `NET-002`).
-  - Alert fingerprinting, correlation, and evidence linking (`alert_events`).
-  - Configurable retention with active forensic evidence preservation (Strategy A).
-- **Phase 4 (Tauri Desktop Dashboard & Security Operations)**: *Completed*
-  - Native Windows 11 desktop application via Tauri 2, React 19, TypeScript (strict mode), and Tailwind CSS.
-  - Professional cybersecurity SOC dark theme with high contrast typography and accessible status indicators.
-  - 7 global navigation pages: Overview, Network Events, Security Alerts, Detection Rules, Telemetry, Audit History, Settings.
-  - 17 typed Rust backend commands with strict boundary validation and safe error mapping.
-  - Server-side SQLite pagination and multi-parameter filtering for events and alerts.
-  - Interactive alert triage with evidence inspection, status transitions (`Acknowledge`, `Resolve`), and audit trail.
-  - Real-time IPC event notifications (`sentinel://*`) without busy polling.
-  - Preservation of headless CLI monitoring mode (`--cli`).
-- **Phase 5 (Security Hardening and Integration)**: *Completed*
-  - Comprehensive STRIDE threat model (`docs/threat-model.md`).
-  - Tauri capability restrictions (`core:default`, `windows: ["main"]`) and restrictive Content Security Policy.
-  - Safe Windows API isolation with `SAFETY` contracts and `MAX_SNAPSHOT_RECORDS` bounds check.
-  - Frontend input validation and error sanitization (`AppError`) suppressing internal paths and SQL.
-  - SQLite security hardening, parameterized queries, and bounded conflict retries.
-  - Six failure injection integration tests covering corrupt configurations, audit limits, and collector faults.
-  - Empirical performance benchmark suite verifying 17k+ events/sec ingestion and 631k events/sec detection.
-  - Automated GitHub Actions CI workflow (`.github/workflows/ci.yml`).
-  - Zero-warning clean passes across `cargo fmt`, `cargo clippy`, `cargo test`, `oxlint`, and `npm audit`.
+- **Architecture:** [OVERVIEW.md](docs/architecture/OVERVIEW.md) | [DATA_FLOW.md](docs/architecture/DATA_FLOW.md) | [THREAT_MODEL.md](docs/architecture/THREAT_MODEL.md) | [DATABASE.md](docs/architecture/DATABASE.md)
+- **Development:** [BUILD_WINDOWS.md](docs/development/BUILD_WINDOWS.md)
+- **Release:** [RELEASE_READINESS.md](docs/release/RELEASE_READINESS.md) | [BUILD_VERIFICATION.md](docs/release/BUILD_VERIFICATION.md) | [RELEASE_NOTES.md](docs/release/RELEASE_NOTES.md) | [SBOM_AND_CHECKSUMS.md](docs/release/SBOM_AND_CHECKSUMS.md)
+- **Security:** [DEPENDENCY_SECURITY.md](docs/security/DEPENDENCY_SECURITY.md) | [FINAL_SECURITY_REVIEW.md](docs/security/FINAL_SECURITY_REVIEW.md)
+- **Testing:** [RELEASE_TEST_PLAN.md](docs/testing/RELEASE_TEST_PLAN.md)
+- **User Guides:** [QUICK_START.md](docs/user/QUICK_START.md) | [USER_GUIDE.md](docs/user/USER_GUIDE.md) | [INSTALLATION_AND_UNINSTALLATION.md](docs/user/INSTALLATION_AND_UNINSTALLATION.md) | [TROUBLESHOOTING.md](docs/user/TROUBLESHOOTING.md) | [PRIVACY.md](docs/user/PRIVACY.md) | [DATA_BACKUP_AND_RESTORE.md](docs/user/DATA_BACKUP_AND_RESTORE.md)
+- **Portfolio:** [PROJECT_OVERVIEW.md](docs/portfolio/PROJECT_OVERVIEW.md) | [SCREENSHOT_GUIDE.md](docs/portfolio/SCREENSHOT_GUIDE.md) | [DEMO_SCRIPT.md](docs/portfolio/DEMO_SCRIPT.md) | [INTERVIEW_PREPARATION.md](docs/portfolio/INTERVIEW_PREPARATION.md)
 
 ---
 
-## Security & Scope
+## 15. License & Notices
 
-SentinelX is strictly a defensive telemetry analysis framework. For full details on our threat model and security boundaries, see [SECURITY.md](SECURITY.md), [docs/threat-model.md](docs/threat-model.md), and [docs/security-review.md](docs/security-review.md).
-
----
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).
+SentinelX is licensed under the [MIT License](LICENSE).  
+Copyright (c) 2026 SentinelX Contributors.

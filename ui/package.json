@@ -1,7 +1,7 @@
 {
   "name": "ui",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:desktop": "tauri build -c ../crates/sentinel-app/tauri.conf.json"
+    "build:desktop": "tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

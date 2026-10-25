@@ -8,6 +8,11 @@ import {
   Save,
   RefreshCw,
   HardDrive,
+  Info,
+  ExternalLink,
+  ShieldCheck,
+  FileText,
+  Code,
 } from 'lucide-react';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
@@ -346,6 +351,78 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 <option value={100}>100 rows</option>
                 <option value={200}>200 rows</option>
               </select>
+            </div>
+          </div>
+        </Card>
+
+        {/* About SentinelX Section */}
+        <Card
+          title={
+            <div className="flex items-center gap-2">
+              <Info className="w-4 h-4 text-cyan-400" />
+              <span>About SentinelX</span>
+            </div>
+          }
+        >
+          <div className="space-y-4 text-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-950/60 border border-slate-800/80 rounded-lg">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-cyan-950/70 border border-cyan-500/40 rounded-lg text-cyan-400 shadow-[0_0_12px_rgba(14,165,233,0.2)]">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-100 flex items-center gap-1.5">
+                    SentinelX <span className="text-cyan-400 font-mono text-xs">v1.0.0</span>
+                  </h4>
+                  <p className="text-slate-400 text-[11px]">
+                    Defensive Cybersecurity Telemetry, Threat Detection & Storage Engine
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono">
+                <span className="px-2 py-0.5 bg-slate-900 border border-slate-700/60 rounded">Windows 11 x64</span>
+                <span className="px-2 py-0.5 bg-cyan-950/50 border border-cyan-700/50 text-cyan-300 rounded">Tauri 2 + Rust 2024</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-slate-300">
+              <div className="p-3 bg-slate-900/40 border border-slate-800/60 rounded-lg space-y-1">
+                <span className="text-slate-400 font-semibold block text-[11px]">License & Governance</span>
+                <p className="text-slate-200">MIT Open Source License</p>
+                <p className="text-[11px] text-slate-400">Permissive defensive research and portfolio project.</p>
+              </div>
+              <div className="p-3 bg-slate-900/40 border border-slate-800/60 rounded-lg space-y-1">
+                <span className="text-slate-400 font-semibold block text-[11px]">Detection Engine</span>
+                <p className="text-slate-200">NET-001 (Port Scan) & NET-002 (Burst)</p>
+                <p className="text-[11px] text-slate-400">In-memory sliding window state with WAL SQLite persistence.</p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-amber-950/20 border border-amber-800/30 rounded-lg text-amber-300/90 text-[11px] leading-relaxed">
+              <strong>Defensive Scope Disclosure:</strong> SentinelX uses periodic read-only Windows TCP table snapshots via <code className="bg-slate-900 px-1 py-0.5 rounded text-amber-200">GetExtendedTcpTable</code>. It does not perform raw packet capture or payload inspection, does not install system services or kernel drivers, and does not block network traffic.
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 pt-1 border-t border-slate-800/60">
+              <a
+                href="https://github.com/sentinelx/sentinelx"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-cyan-400 hover:text-cyan-300 transition-colors text-xs font-medium"
+              >
+                <Code className="w-3.5 h-3.5" />
+                <span>GitHub Repository</span>
+                <ExternalLink className="w-3 h-3 text-slate-400" />
+              </a>
+              <a
+                href="https://github.com/sentinelx/sentinelx/tree/master/docs"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-cyan-400 hover:text-cyan-300 transition-colors text-xs font-medium"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Architecture & User Documentation</span>
+                <ExternalLink className="w-3 h-3 text-slate-400" />
+              </a>
             </div>
           </div>
         </Card>

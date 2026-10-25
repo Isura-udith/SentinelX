@@ -1,0 +1,173 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.5.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:3acd2496-9a5a-42fd-b3d7-9a6c9eb6442e",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-10-25T15:35:00Z",
+    "tools": [
+      {
+        "vendor": "SentinelX Release Engineering",
+        "name": "CycloneDX SBOM Generator",
+        "version": "1.0.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "SentinelX",
+      "version": "1.0.0",
+      "description": "Defensive cybersecurity monitoring desktop application for Windows 11",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:sentinelx:sentinelx:1.0.0:*:*:*:*:windows:x64:*"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "sentinel-core",
+      "version": "1.0.0",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }]
+    },
+    {
+      "type": "library",
+      "name": "sentinel-collector",
+      "version": "1.0.0",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }]
+    },
+    {
+      "type": "library",
+      "name": "sentinel-detection",
+      "version": "1.0.0",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }]
+    },
+    {
+      "type": "library",
+      "name": "sentinel-storage",
+      "version": "1.0.0",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }]
+    },
+    {
+      "type": "application",
+      "name": "sentinel-app",
+      "version": "1.0.0",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }]
+    },
+    {
+      "type": "framework",
+      "name": "tauri",
+      "version": "2.12.5",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }, { "license": { "id": "Apache-2.0" } }]
+    },
+    {
+      "type": "library",
+      "name": "windows-sys",
+      "version": "0.61.2",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }, { "license": { "id": "Apache-2.0" } }]
+    },
+    {
+      "type": "library",
+      "name": "tokio",
+      "version": "1.54.1",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }]
+    },
+    {
+      "type": "library",
+      "name": "sqlx",
+      "version": "0.8.6",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }, { "license": { "id": "Apache-2.0" } }]
+    },
+    {
+      "type": "library",
+      "name": "serde",
+      "version": "1.0.229",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }, { "license": { "id": "Apache-2.0" } }]
+    },
+    {
+      "type": "library",
+      "name": "serde_json",
+      "version": "1.0.154",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }, { "license": { "id": "Apache-2.0" } }]
+    },
+    {
+      "type": "library",
+      "name": "chrono",
+      "version": "0.4.45",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }, { "license": { "id": "Apache-2.0" } }]
+    },
+    {
+      "type": "library",
+      "name": "uuid",
+      "version": "1.29.0",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "Apache-2.0" } }, { "license": { "id": "MIT" } }]
+    },
+    {
+      "type": "library",
+      "name": "tracing",
+      "version": "0.1.44",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }]
+    },
+    {
+      "type": "framework",
+      "name": "react",
+      "version": "19.3.1",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }]
+    },
+    {
+      "type": "framework",
+      "name": "react-dom",
+      "version": "19.3.1",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }]
+    },
+    {
+      "type": "library",
+      "name": "@tauri-apps/api",
+      "version": "2.12.4",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }, { "license": { "id": "Apache-2.0" } }]
+    },
+    {
+      "type": "library",
+      "name": "lucide-react",
+      "version": "1.61.0",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "ISC" } }]
+    },
+    {
+      "type": "library",
+      "name": "recharts",
+      "version": "3.10.1",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }]
+    },
+    {
+      "type": "library",
+      "name": "tailwindcss",
+      "version": "4.3.3",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }]
+    }
+  ]
+}

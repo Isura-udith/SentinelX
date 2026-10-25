@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/2.0/crates/tauri-cli/schema.json",
   "productName": "SentinelX",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "identifier": "com.sentinelx.desktop",
   "build": {
     "beforeBuildCommand": "npm run build",
@@ -26,12 +26,18 @@
   },
   "bundle": {
     "active": true,
+    "targets": ["nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.ico",
       "icons/icon.png"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   }
 }
