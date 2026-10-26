@@ -362,6 +362,7 @@ fn main() -> ExitCode {
             get_audit_history,
             get_application_settings,
             update_application_settings,
+            get_system_diagnostics,
         ])
         .run(tauri::generate_context!());
 

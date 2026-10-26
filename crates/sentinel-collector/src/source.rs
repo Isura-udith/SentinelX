@@ -62,6 +62,27 @@ pub trait TelemetryCollector: Send + Sync {
     fn collect(&mut self) -> Result<CollectionBatch, CollectorError>;
 }
 
+/// Standby collector placeholder used during internal thread ownership transfers.
+/// Never produces synthetic telemetry.
+#[derive(Debug, Default)]
+pub struct StandbyCollector;
+
+impl TelemetryCollector for StandbyCollector {
+    fn name(&self) -> &'static str {
+        "StandbyCollector"
+    }
+
+    fn source(&self) -> TelemetrySource {
+        TelemetrySource::WindowsTcpSnapshot
+    }
+
+    fn collect(&mut self) -> Result<CollectionBatch, CollectorError> {
+        Err(CollectorError::Uninitialized(
+            "Standby collector cannot execute collection".to_string(),
+        ))
+    }
+}
+
 impl fmt::Display for CollectionMetadata {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(

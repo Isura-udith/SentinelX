@@ -4,8 +4,7 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use sentinel_collector::error::CollectorError;
-use sentinel_collector::mock::MockCollector;
-use sentinel_collector::source::{CollectionBatch, TelemetryCollector};
+use sentinel_collector::source::{CollectionBatch, StandbyCollector, TelemetryCollector};
 use sentinel_collector::stats::CollectionStats;
 use sentinel_core::alert::SecurityAlert;
 use sentinel_detection::engine::DetectionEngine;
@@ -195,7 +194,7 @@ impl PipelineCoordinator {
     #[instrument(skip(self))]
     pub async fn process_cycle(&mut self) -> Result<Vec<SecurityAlert>> {
         // 1. Capture snapshot telemetry across the spawn_blocking boundary
-        let mut collector = std::mem::replace(&mut self.collector, Box::new(MockCollector::new()));
+        let mut collector = std::mem::replace(&mut self.collector, Box::new(StandbyCollector));
         let collection_start = Instant::now();
 
         let collection_result: Result<CollectionBatch, CollectorError> =

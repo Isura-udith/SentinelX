@@ -13,12 +13,15 @@ import {
   ShieldCheck,
   FileText,
   Code,
+  Activity,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { Spinner } from '../components/common/Spinner';
 import { tauriCommands } from '../services/tauriCommands';
-import type { AppSettings, UpdateAppSettingsInput } from '../types';
+import type { AppSettings, UpdateAppSettingsInput, SystemDiagnostics } from '../types';
 
 interface SettingsPageProps {
   onAddToast: (type: 'success' | 'error' | 'info', message: string) => void;
@@ -43,6 +46,24 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [pollingInterval, setPollingInterval] = useState<number>(1000);
   const [logVerbosity, setLogVerbosity] = useState<string>('info');
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
+
+  // Diagnostics states
+  const [diagnostics, setDiagnostics] = useState<SystemDiagnostics | null>(null);
+  const [isDiagnosticsLoading, setIsDiagnosticsLoading] = useState<boolean>(false);
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+
+  const fetchDiagnostics = useCallback(async () => {
+    setIsDiagnosticsLoading(true);
+    setDiagnosticsError(null);
+    try {
+      const res = await tauriCommands.getSystemDiagnostics();
+      setDiagnostics(res);
+    } catch (err: unknown) {
+      setDiagnosticsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsDiagnosticsLoading(false);
+    }
+  }, []);
 
   const fetchSettings = useCallback(async () => {
     setIsLoading(true);
@@ -89,6 +110,20 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         }
       }
     );
+
+    tauriCommands.getSystemDiagnostics().then(
+      (diag) => {
+        if (!ignore) {
+          setDiagnostics(diag);
+        }
+      },
+      (err: unknown) => {
+        if (!ignore) {
+          setDiagnosticsError(err instanceof Error ? err.message : String(err));
+        }
+      }
+    );
+
     return () => {
       ignore = true;
     };
@@ -352,6 +387,144 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 <option value={200}>200 rows</option>
               </select>
             </div>
+          </div>
+        </Card>
+
+        {/* Live System Diagnostics & Operational State (Phase G) */}
+        <Card
+          title={
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-cyan-400" />
+                <span>Live System Diagnostics & Verification</span>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={fetchDiagnostics}
+                isLoading={isDiagnosticsLoading}
+                leftIcon={<RefreshCw className="w-3 h-3" />}
+              >
+                Run Live Diagnostics
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-4 text-xs">
+            <p className="text-slate-400 leading-relaxed">
+              Verify actual operational state directly from the Rust backend, including SQLite WAL database health, applied schema migrations, and live Windows telemetry collector metrics. No simulated scores or synthetic values.
+            </p>
+
+            {diagnosticsError && (
+              <div className="p-3 bg-rose-950/40 border border-rose-800/60 rounded-lg text-rose-300 flex items-start gap-2">
+                <XCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-semibold block">Diagnostic Query Failed</span>
+                  <span className="text-[11px] font-mono">{diagnosticsError}</span>
+                </div>
+              </div>
+            )}
+
+            {isDiagnosticsLoading && !diagnostics && (
+              <div className="py-6 flex justify-center">
+                <Spinner label="Executing live backend diagnostic probe..." size="md" />
+              </div>
+            )}
+
+            {diagnostics && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {/* Backend Status */}
+                  <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg space-y-1">
+                    <span className="text-slate-400 font-medium text-[11px] block">Backend Service</span>
+                    <div className="flex items-center gap-1.5 text-emerald-400 font-medium">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>{diagnostics.backend_initialized ? 'Initialized & Active' : 'Uninitialized'}</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">SentinelX v{diagnostics.app_version}</span>
+                  </div>
+
+                  {/* Database Health & Schema */}
+                  <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg space-y-1">
+                    <span className="text-slate-400 font-medium text-[11px] block">SQLite Database</span>
+                    <div className="flex items-center gap-1.5 font-medium">
+                      {diagnostics.database_connected ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400">Connected (WAL)</span>
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                          <span className="text-rose-400">Disconnected</span>
+                        </>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-cyan-400 font-mono">
+                      Schema: {diagnostics.database_schema_version}
+                      {diagnostics.database_file_size_bytes !== null && (
+                        <span> ({(diagnostics.database_file_size_bytes / 1024).toFixed(0)} KB)</span>
+                      )}
+                    </span>
+                  </div>
+
+                  {/* Persisted Records */}
+                  <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg space-y-1">
+                    <span className="text-slate-400 font-medium text-[11px] block">Persisted Records</span>
+                    <div className="text-slate-200 font-semibold text-sm">
+                      {diagnostics.total_persisted_events.toLocaleString()}{' '}
+                      <span className="text-xs font-normal text-slate-400">events</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {diagnostics.total_persisted_alerts.toLocaleString()} detected alerts
+                    </span>
+                  </div>
+
+                  {/* Telemetry Collector Status */}
+                  <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg space-y-1">
+                    <span className="text-slate-400 font-medium text-[11px] block">Collector State</span>
+                    <div className="text-slate-200 font-medium capitalize flex items-center gap-1.5">
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          diagnostics.collector_is_running
+                            ? 'bg-emerald-400 animate-pulse'
+                            : 'bg-slate-500'
+                        }`}
+                      />
+                      <span>{diagnostics.collector_status}</span>
+                    </div>
+                    <span className="text-[10px] text-cyan-400 font-mono">
+                      {diagnostics.collector_is_running ? 'Active Polling' : 'Idle / Stopped'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Additional Telemetry Details */}
+                <div className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-lg space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+                    <div>
+                      <span className="text-slate-400 block">Last Snapshot Timestamp:</span>
+                      <span className="font-mono text-slate-300">
+                        {diagnostics.last_collection_time
+                          ? new Date(diagnostics.last_collection_time).toLocaleString()
+                          : 'No snapshot cycle recorded yet'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Latest Detected Error:</span>
+                      <span className={`font-mono ${diagnostics.latest_application_error ? 'text-rose-400' : 'text-slate-400'}`}>
+                        {diagnostics.latest_application_error ?? 'None (nominal execution)'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between text-[10px] text-slate-500">
+                    <span>Evidence-based diagnostic telemetry probe</span>
+                    <span className="font-mono">Real-time backend query</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </Card>
 

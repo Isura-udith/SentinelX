@@ -202,8 +202,8 @@ export const EventsPage: React.FC = () => {
               aria-label="Filter by telemetry source"
             >
               <option value="">All Sources</option>
-              <option value="WindowsTcp">WindowsTcp</option>
-              <option value="Mock">Mock</option>
+              <option value="windows_tcp">Live Windows TCP</option>
+              <option value="synthetic_simulator">Synthetic Test Data</option>
             </select>
 
             {/* Sort toggle */}

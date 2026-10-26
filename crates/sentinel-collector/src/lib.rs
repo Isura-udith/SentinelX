@@ -29,6 +29,6 @@ pub use normalize::{
     RawTcpRecord, SkipReason, TcpState, decode_ipv4_addr, decode_ipv6_addr, decode_tcp_port,
     normalize_batch, normalize_tcp_record,
 };
-pub use source::{CollectionBatch, CollectionMetadata, TelemetryCollector};
+pub use source::{CollectionBatch, CollectionMetadata, StandbyCollector, TelemetryCollector};
 pub use stats::CollectionStats;
 pub use windows_tcp::WindowsTcpCollector;

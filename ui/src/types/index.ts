@@ -36,10 +36,10 @@ export interface NetworkEventSummary {
   timestamp: string;
   telemetry_source: string;
   protocol: string;
-  source_ip: string;
-  source_port: number;
-  destination_ip: string;
-  destination_port: number;
+  source_ip: string | null;
+  source_port: number | null;
+  destination_ip: string | null;
+  destination_port: number | null;
   process_id: number | null;
 }
 
@@ -113,13 +113,27 @@ export interface DashboardSummary {
 }
 
 export interface AuditEntry {
-  id: number;
+  id: string | number;
   timestamp: string;
   actor: string;
   action: string;
   target_type: string;
   target_id: string | null;
   details: Record<string, unknown>;
+}
+
+export interface SystemDiagnostics {
+  app_version: string;
+  backend_initialized: boolean;
+  database_connected: boolean;
+  database_schema_version: string;
+  database_file_size_bytes: number | null;
+  collector_status: string;
+  collector_is_running: boolean;
+  last_collection_time: string | null;
+  total_persisted_events: number;
+  total_persisted_alerts: number;
+  latest_application_error: string | null;
 }
 
 export interface AppSettings {

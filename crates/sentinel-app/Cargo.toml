@@ -10,7 +10,7 @@ description = "SentinelX desktop dashboard application"
 workspace = true
 
 [build-dependencies]
-tauri-build = { version = "2", default-features = false }
+tauri-build = { version = "2", default-features = false , features = [] }
 
 [dependencies]
 sentinel-core.workspace = true

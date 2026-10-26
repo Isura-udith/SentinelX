@@ -45,6 +45,10 @@ pub enum CollectorError {
     #[error("mock collector simulated failure: {0}")]
     MockFailure(String),
 
+    /// Collector is uninitialized or in standby state.
+    #[error("collector uninitialized or in standby: {0}")]
+    Uninitialized(String),
+
     /// Domain invariant failure during event creation.
     #[error("domain invariant violation: {0}")]
     Domain(#[from] DomainError),

@@ -3,7 +3,7 @@
 use anyhow::{Context, Result, bail};
 use sentinel_collector::error::CollectorError;
 use sentinel_collector::mock::{MockCollector, MockScenario};
-use sentinel_collector::source::{CollectionBatch, TelemetryCollector};
+use sentinel_collector::source::{CollectionBatch, StandbyCollector, TelemetryCollector};
 use sentinel_collector::stats::CollectionStats;
 use sentinel_collector::windows_tcp::WindowsTcpCollector;
 use sentinel_core::alert::SecurityAlert;
@@ -149,8 +149,7 @@ impl TelemetryScheduler {
 
             // Execute collection in a blocking task to prevent stalling Tokio runtime worker threads:
             // We take temporary ownership of the collector box across the blocking boundary.
-            let mut collector =
-                std::mem::replace(&mut self.collector, Box::new(MockCollector::new()));
+            let mut collector = std::mem::replace(&mut self.collector, Box::new(StandbyCollector));
             let collection_start = std::time::Instant::now();
 
             let collection_result: Result<CollectionBatch, CollectorError> =

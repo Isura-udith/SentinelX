@@ -210,6 +210,23 @@ impl Database {
         &self.pool
     }
 
+    /// Returns the latest applied database schema migration version.
+    pub async fn get_schema_version(&self) -> Result<String, StorageError> {
+        let version: i64 = sqlx::query_scalar(
+            "SELECT version FROM _sqlx_migrations ORDER BY version DESC LIMIT 1",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(StorageError::Database)?;
+
+        Ok(format!("v{version}"))
+    }
+
+    /// Verifies live connectivity to the SQLite connection pool.
+    pub async fn is_healthy(&self) -> bool {
+        self.pool.acquire().await.is_ok()
+    }
+
     /// Gracefully closes all idle connections in the pool.
     pub async fn close(&self) {
         self.pool.close().await;

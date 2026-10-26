@@ -239,3 +239,21 @@ async fn test_telemetry_control_idempotency() {
         .await
         .expect("repeated start succeeds idempotently");
 }
+
+#[tokio::test]
+async fn test_system_diagnostics_live_state() {
+    let state = setup_test_app_state().await;
+
+    let diag = get_system_diagnostics_impl(&state)
+        .await
+        .expect("system diagnostics query succeeds");
+
+    assert!(diag.backend_initialized);
+    assert!(diag.database_connected);
+    assert_eq!(diag.app_version, "1.0.0");
+    assert!(diag.collector_is_running);
+    assert_eq!(diag.database_schema_version, "v3");
+    assert_eq!(diag.total_persisted_events, 0);
+    assert_eq!(diag.total_persisted_alerts, 0);
+    assert!(diag.latest_application_error.is_none());
+}
